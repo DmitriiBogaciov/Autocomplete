@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Editor, EditorState } from "draft-js";
 import "draft-js/dist/Draft.css";
+import { getEditorWordContext } from "./autocomplete/getEditorWordContext"
 
 function App() {
   const [editorState, setEditorState] = useState(() =>
     EditorState.createEmpty()
   );
+
+
+  const wordContext = getEditorWordContext(editorState);
+  console.log("Word context:", wordContext);
 
   return (
     <div style={{ maxWidth: 800, margin: "40px auto", fontFamily: "sans-serif" }}>
@@ -26,6 +31,17 @@ function App() {
           placeholder="Začni psát text…"
         />
       </div>
+
+      {wordContext && (
+        <div style={{ marginTop: 16 }}>
+          <div>Введённая часть: {wordContext.prefix}</div>
+          <div>Слово целиком: {wordContext.word}</div>
+          <div>
+            Границы слова: {wordContext.start}–{wordContext.end}
+          </div>
+        </div>
+      )}
+      
     </div>
   );
 }
