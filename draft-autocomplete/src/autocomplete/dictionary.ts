@@ -1,0 +1,17 @@
+export const dictionary: string[] = [
+  "hello",
+  "help",
+  "helpful",
+  "hero",
+  "world",
+  "word",
+  "work",
+  "worker",
+  "working",
+  "привет",
+  "пример",
+  "приложение",
+  "příklad",
+  "příroda",
+  "přítel",
+];

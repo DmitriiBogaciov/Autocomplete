@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Editor, EditorState } from "draft-js";
 import "draft-js/dist/Draft.css";
 import { getEditorWordContext } from "./autocomplete/getEditorWordContext"
+import { getSuggestions } from "./autocomplete/getSuggestions";
+import { dictionary } from "./autocomplete/dictionary";
 
 function App() {
   const [editorState, setEditorState] = useState(() =>
@@ -10,7 +12,9 @@ function App() {
 
 
   const wordContext = getEditorWordContext(editorState);
-  console.log("Word context:", wordContext);
+
+  const suggestions = wordContext ? getSuggestions(wordContext.prefix, dictionary) : [];
+  // console.log("Word context:", wordContext);
 
   return (
     <div style={{ maxWidth: 800, margin: "40px auto", fontFamily: "sans-serif" }}>
@@ -31,6 +35,14 @@ function App() {
           placeholder="Začni psát text…"
         />
       </div>
+
+      {suggestions.length > 0 && (
+        <ul>
+          {suggestions.map((suggestion, index) => (
+            <li key={index}>{suggestion}</li>
+          ))}
+        </ul>
+      )}
 
       {wordContext && (
         <div style={{ marginTop: 16 }}>
