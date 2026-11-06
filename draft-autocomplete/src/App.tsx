@@ -4,6 +4,7 @@ import "draft-js/dist/Draft.css";
 import { getEditorWordContext } from "./autocomplete/getEditorWordContext"
 import { getSuggestions } from "./autocomplete/getSuggestions";
 import { dictionary } from "./autocomplete/dictionary";
+import { insertSuggestion } from "./autocomplete/insertSuggestion";
 
 function App() {
   const [editorState, setEditorState] = useState(() =>
@@ -15,6 +16,18 @@ function App() {
 
   const suggestions = wordContext ? getSuggestions(wordContext.prefix, dictionary) : [];
   // console.log("Word context:", wordContext);
+
+  function handleSuggestionSelect(suggestion: string) {
+    if (!wordContext) return;
+
+    const nextEditorState = insertSuggestion(
+      editorState,
+      wordContext,
+      suggestion,
+    )
+
+    setEditorState(nextEditorState);
+  }
 
   return (
     <div style={{ maxWidth: 800, margin: "40px auto", fontFamily: "sans-serif" }}>
@@ -38,8 +51,18 @@ function App() {
 
       {suggestions.length > 0 && (
         <ul>
-          {suggestions.map((suggestion, index) => (
-            <li key={index}>{suggestion}</li>
+          {suggestions.map((suggestion) => (
+            <li key={suggestion}>
+              <button
+                type="button"
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                }}
+                onClick={() => handleSuggestionSelect(suggestion)}
+              >
+                {suggestion}
+              </button>
+            </li>
           ))}
         </ul>
       )}
@@ -53,7 +76,7 @@ function App() {
           </div>
         </div>
       )}
-      
+
     </div>
   );
 }
