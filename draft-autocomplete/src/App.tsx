@@ -1,11 +1,13 @@
-import { useState, useRef } from "react";
-import { Editor, EditorState } from "draft-js";
+import { useState, useRef, useEffect } from "react";
+import { Editor, EditorState, Modifier } from "draft-js";
 import "draft-js/dist/Draft.css";
-import { getEditorWordContext } from "./autocomplete/getEditorWordContext"
-import { getSuggestions } from "./autocomplete/getSuggestions";
-import { dictionary } from "./autocomplete/dictionary";
-import { insertSuggestion } from "./autocomplete/insertSuggestion";
 import { useSuggestionPosition } from "./autocomplete/useSuggestionPosition";
+import { getJsonEditorInput } from "./autocomplete/getJsonEditorInput";
+import { getJsonContext } from "./autocomplete/getJsonContext.ts";
+import { getJsonSuggestions } from "./autocomplete/jsonSuggestions";
+import { apiSuggestionRules } from "./autocomplete/apiSuggestionRules";
+import { insertJsonSuggestion } from "./autocomplete/insertJsonSuggestion";
+import type { JsonSuggestion } from "./autocomplete/jsonSuggestions";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent } from "react";
 
@@ -13,18 +15,20 @@ function App() {
   const [editorState, setEditorState] = useState(() =>
     EditorState.createEmpty()
   );
-
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-
-  const [activeIndex, setActiveIndex] = useState(0);
+  const jsonInput = getJsonEditorInput(editorState);
+  const jsonContext = jsonInput
+    ? getJsonContext(jsonInput.text, jsonInput.cursor)
+    : null;
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [isDismissed, setIsDismissed] = useState(false);
-
-  const wordContext = getEditorWordContext(editorState);
+  const suggestionListRef = useRef<HTMLUListElement>(null);
 
   const suggestions =
-    wordContext && !isDismissed
-      ? getSuggestions(wordContext.prefix, dictionary)
+    jsonContext && !isDismissed
+      ? getJsonSuggestions(jsonContext, apiSuggestionRules)
       : [];
+
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
   const suggestionPosition = useSuggestionPosition(
     editorContainerRef,
@@ -32,18 +36,19 @@ function App() {
     suggestions.length > 0,
   );
 
-  function handleSuggestionSelect(suggestion: string) {
-    if (!wordContext) return;
-
-    const nextEditorState = insertSuggestion(
+  function handleSuggestionSelect(suggestion: JsonSuggestion) {
+    const nextState = insertJsonSuggestion(
       editorState,
-      wordContext,
       suggestion,
-    )
+    );
 
-    setEditorState(nextEditorState);
-    setActiveIndex(0);
-    setIsDismissed(true);
+    if (nextState === editorState) {
+      return;
+    }
+
+    setEditorState(nextState);
+    setActiveIndex(-1);
+    setIsDismissed(suggestion.kind === "value");
   }
 
   function handleEditorChange(nextState: EditorState) {
@@ -52,70 +57,169 @@ function App() {
     const selectionChanged = !nextState.getSelection().equals(editorState.getSelection());
 
     if (contentChanged || selectionChanged) {
-      setActiveIndex(0);
+      setActiveIndex(-1);
       setIsDismissed(false);
     }
 
     setEditorState(nextState);
   }
 
+  useEffect(() => {
+    const list = suggestionListRef.current;
+
+    const button = list?.querySelector<HTMLButtonElement>(
+      '[data-active="true"]',
+    );
+
+    if (!list || !button) {
+      return;
+    }
+
+    const listRect = list.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+
+    const visibleTop = listRect.top + list.clientTop;
+    const visibleBottom = visibleTop + list.clientHeight;
+
+    if (buttonRect.top < visibleTop) {
+      list.scrollTop -= visibleTop - buttonRect.top;
+    } else if (buttonRect.bottom > visibleBottom) {
+      list.scrollTop += buttonRect.bottom - visibleBottom;
+    }
+  }, [activeIndex, suggestions.length, suggestionPosition]);
+
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (
-      suggestions.length === 0 ||
       event.nativeEvent.isComposing ||
       event.ctrlKey ||
       event.metaKey ||
-      event.altKey ||
       event.shiftKey
     ) {
       return;
     }
 
-    switch (event.key) {
-      case "ArrowDown": {
-        event.preventDefault();
-        event.stopPropagation();
+    const isMenuVisible =
+      !isDismissed &&
+      suggestions.length > 0 &&
+      suggestionPosition !== null;
 
-        setActiveIndex(
-          (index) => (index + 1) % suggestions.length
-        );
-        break;
+    function consumeEvent() {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    // Пока удерживается Alt, стрелки листают подсказки.
+    if (
+      event.altKey &&
+      (event.key === "ArrowDown" || event.key === "ArrowUp")
+    ) {
+      if (!isMenuVisible) {
+        return;
       }
 
-      case "ArrowUp": {
-        event.preventDefault();
-        event.stopPropagation();
+      consumeEvent();
 
-        setActiveIndex(
-          (index) =>
-            (index - 1 + suggestions.length) % suggestions.length
-        );
-        break;
-      }
+      const direction = event.key === "ArrowDown" ? 1 : -1;
 
-      case "Enter": {
-        const suggestion = suggestions[activeIndex];
-
-        if (suggestion === undefined) {
-          return;
+      setActiveIndex((index) => {
+        if (index < 0) {
+          return direction === 1 ? 0 : suggestions.length - 1;
         }
 
-        event.preventDefault();
-        event.stopPropagation();
+        return (
+          index + direction + suggestions.length
+        ) % suggestions.length;
+      });
 
-        handleSuggestionSelect(suggestion);
-        break;
-      }
-
-      case "Escape": {
-        event.preventDefault();
-        event.stopPropagation();
-
-        setIsDismissed(true);
-        setActiveIndex(0);
-        break;
-      }
+      return;
     }
+
+    // Другие сочетания с Alt оставляем браузеру.
+    if (event.altKey) {
+      if (
+        isMenuVisible &&
+        (event.key === "Enter" || event.key === "Tab")
+      ) {
+        consumeEvent();
+
+        const suggestion = suggestions[activeIndex];
+
+        if (suggestion !== undefined) {
+          handleSuggestionSelect(suggestion);
+        }
+      }
+
+      return;
+    }
+
+    if (event.key === "Escape" && isMenuVisible) {
+      consumeEvent();
+      setIsDismissed(true);
+      setActiveIndex(-1);
+      return;
+    }
+
+    const selectedSuggestion =
+      isMenuVisible && activeIndex >= 0
+        ? suggestions[activeIndex]
+        : undefined;
+
+    if (
+      (event.key === "Enter" || event.key === "Tab") &&
+      selectedSuggestion !== undefined
+    ) {
+      consumeEvent();
+      handleSuggestionSelect(selectedSuggestion);
+      return;
+    }
+
+    // Обычные стрелки возвращают управление редактору.
+    if (
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp" ||
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowRight"
+    ) {
+      setActiveIndex(-1);
+      return;
+    }
+
+    if (event.key === "Tab" && insertTab()) {
+      consumeEvent();
+    }
+
+    // Enter без выбранной подсказки создаёт новую строку.
+  }
+  function insertTab(): boolean {
+    const selection = editorState.getSelection();
+
+    // Пока поддерживаем вставку только в позиции курсора.
+    // Выделенный текст не заменяем табуляцией.
+    if (!selection.isCollapsed()) {
+      return false;
+    }
+
+    const nextContent = Modifier.insertText(
+      editorState.getCurrentContent(),
+      selection,
+      "\t",
+      editorState.getCurrentInlineStyle(),
+    );
+
+    const nextState = EditorState.push(
+      editorState,
+      nextContent,
+      "insert-characters",
+    );
+
+    const focusedState = EditorState.forceSelection(
+      nextState,
+      nextContent.getSelectionAfter(),
+    );
+
+    handleEditorChange(focusedState);
+
+    return true;
   }
 
   return (
@@ -131,12 +235,15 @@ function App() {
           padding: 16,
           minHeight: 200,
           background: "#fff",
+          color: "#111",
+          textAlign: "left",
+          tabSize: 2,
         }}
       >
         <Editor
           editorState={editorState}
           onChange={handleEditorChange}
-          placeholder="Začni psát text…"
+          placeholder="Начните вводить JSON…"
         />
       </div>
 
@@ -144,6 +251,7 @@ function App() {
         suggestionPosition &&
         createPortal(
           <ul
+            ref={suggestionListRef}
             style={{
               position: "fixed",
               left: suggestionPosition.left,
@@ -163,11 +271,11 @@ function App() {
             }}
           >
             {suggestions.map((suggestion, index) => (
-              <li key={suggestion}>
+              <li key={suggestion.id}>
                 <button
                   type="button"
+                  data-active={index === activeIndex}
                   onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActiveIndex(index)}
                   onClick={() => handleSuggestionSelect(suggestion)}
                   style={{
                     display: "block",
@@ -178,20 +286,57 @@ function App() {
                     textAlign: "left",
                     overflowWrap: "anywhere",
                     cursor: "pointer",
-                    background:
-                      index === activeIndex ? "#dbeafe" : "#fff",
+                    background: index === activeIndex ? "#dbeafe" : "#fff",
                     color: "#111",
                   }}
                 >
-                  {suggestion}
+                  <strong>{suggestion.label}</strong>
+
+                  {suggestion.description && (
+                    <span style={{ display: "block", marginTop: 4 }}>
+                      {suggestion.description}
+                    </span>
+                  )}
                 </button>
               </li>
             ))}
           </ul>,
           document.body,
         )}
+      {jsonContext && (
+        <pre
+          style={{
+            padding: 12,
+            background: "#eee",
+            color: "#111",
+            textAlign: "left",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {JSON.stringify(jsonContext, null, 2)}
+        </pre>
+      )}
+      {jsonInput && (
+        <div style={{ marginTop: 16, textAlign: "left" }}>
+          <div>Позиция курсора в документе: {jsonInput.cursor}</div>
 
-      {wordContext && (
+          <pre
+            style={{
+              padding: 12,
+              background: "#eee",
+              color: "#111",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {jsonInput.text.slice(0, jsonInput.cursor)}
+            {"│"}
+            {jsonInput.text.slice(jsonInput.cursor)}
+          </pre>
+        </div>
+      )}
+
+      {/* {wordContext && (
         <div style={{ marginTop: 16 }}>
           <div>Введённая часть: {wordContext.prefix}</div>
           <div>Слово целиком: {wordContext.word}</div>
@@ -199,7 +344,7 @@ function App() {
             Границы слова: {wordContext.start}–{wordContext.end}
           </div>
         </div>
-      )}
+      )} */}
 
     </div>
   );
