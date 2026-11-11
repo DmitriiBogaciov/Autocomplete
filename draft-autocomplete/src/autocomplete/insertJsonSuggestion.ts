@@ -14,28 +14,92 @@ type TextRange = {
   end: number;
 };
 
-function findStringEnd(text: string, start: number): number {
+function findStringRange(
+  text: string,
+  start: number,
+  cursor: number,
+  kind: "property" | "value",
+): TextRange | null {
   let i = start + 1;
 
   while (i < text.length) {
-    if (text[i] === "\\") {
+    const char = text[i];
+
+    if (char === "\n" || char === "\r") {
+      break;
+    }
+
+    if (char === "\\") {
+      // Незавершённое экранирование перед концом строки.
+      if (
+        i + 1 >= text.length ||
+        text[i + 1] === "\n" ||
+        text[i + 1] === "\r"
+      ) {
+        return null;
+      }
+
       i += 2;
       continue;
     }
 
-    if (text[i] === '"') {
-      return i + 1;
-    }
+    if (char === '"') {
+      const end = i + 1;
 
-    // Незавершённую строку не растягиваем на следующие строки.
-    if (text[i] === "\n" || text[i] === "\r") {
-      return i;
+      // Проверяем корректность самого строкового токена.
+      try {
+        JSON.parse(text.slice(start, end));
+      } catch {
+        return null;
+      }
+
+      // Проверяем, что после кавычки находится
+      // правдоподобная граница токена.
+      const remainder = text
+        .slice(end)
+        .replace(/^[\x20\t\r\n]*/, "");
+
+      const next = remainder[0];
+
+      const validBoundary =
+        next === undefined ||
+        (kind === "property"
+          ? next === ":" || next === "}" || next === ","
+          : next === "," || next === "}" || next === "]");
+
+      if (!validBoundary) {
+        return null;
+      }
+
+      return { start, end };
     }
 
     i++;
   }
 
-  return text.length;
+  // Закрывающей кавычки до конца строки нет.
+  // Восстанавливаем строку только если курсор находится в ней,
+  // а справа до конца строки остались лишь пробелы/табуляции.
+  if (cursor <= start || cursor > i) {
+    return null;
+  }
+
+  const textAfterCursor = text.slice(cursor, i);
+
+  if (!/^[ \t]*$/.test(textAfterCursor)) {
+    return null;
+  }
+
+  try {
+    // Убеждаемся, что добавление кавычки завершает строку.
+    JSON.parse(text.slice(start, cursor) + '"');
+  } catch {
+    return null;
+  }
+
+  // Заменяем только введённую часть до курсора.
+  // Перенос строки и следующий текст не трогаем.
+  return { start, end: cursor };
 }
 
 function findTokenRange(
@@ -43,30 +107,52 @@ function findTokenRange(
   cursor: number,
   insideString: boolean,
   query: string,
+  kind: "property" | "value",
 ): TextRange | null {
   if (insideString) {
     let i = 0;
 
-    while (i < text.length) {
+    // Ищем открывающую кавычку текущей строки,
+    // просматривая текст только до курсора.
+    while (i < cursor) {
       if (text[i] !== '"') {
         i++;
         continue;
       }
 
       const start = i;
-      const end = findStringEnd(text, start);
+      i++;
 
-      if (start < cursor && cursor <= end) {
-        return { start, end };
+      let closed = false;
+
+      while (i < cursor) {
+        if (text[i] === "\n" || text[i] === "\r") {
+          return null;
+        }
+
+        if (text[i] === "\\") {
+          i += 2;
+          continue;
+        }
+
+        if (text[i] === '"') {
+          i++;
+          closed = true;
+          break;
+        }
+
+        i++;
       }
 
-      i = end;
+      if (!closed) {
+        return findStringRange(text, start, cursor, kind);
+      }
     }
 
     return null;
   }
 
-  // Число или литерал, который пользователь уже начал вводить.
+  // Начатое число или литерал.
   if (query.length > 0) {
     const start = cursor - query.length;
     let end = cursor;
@@ -81,7 +167,7 @@ function findTokenRange(
     return { start, end };
   }
 
-  // Курсор может находиться перед уже существующим значением.
+  // Проверяем токен справа от пустой позиции ввода.
   let start = cursor;
 
   while (
@@ -92,10 +178,7 @@ function findTokenRange(
   }
 
   if (text[start] === '"') {
-    return {
-      start,
-      end: findStringEnd(text, start),
-    };
+    return findStringRange(text, start, cursor, kind);
   }
 
   if (start < text.length && /[-0-9tfn]/.test(text[start])) {
@@ -111,7 +194,6 @@ function findTokenRange(
     return { start, end };
   }
 
-  // Объекты и массивы не заменяем скалярной подсказкой.
   if (text[start] === "{" || text[start] === "[") {
     return null;
   }
@@ -198,6 +280,7 @@ export function insertJsonSuggestion(
     input.cursor,
     context.insideString,
     context.query,
+    context.kind,
   );
 
   if (!range) {
