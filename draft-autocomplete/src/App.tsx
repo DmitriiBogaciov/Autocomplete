@@ -67,11 +67,39 @@ function App() {
     return restOfLine.trimStart().startsWith('"');
   })();
 
+  const canShowSuggestions = (() => {
+    if (!jsonInput || !jsonContext || jsonContext.kind === "none") {
+      return false;
+    }
+
+    // Подсказки значений работают как прежде.
+    if (jsonContext.kind === "value") {
+      return true;
+    }
+
+    // Пользователь уже редактирует имя свойства.
+    if (jsonContext.insideString) {
+      return true;
+    }
+
+    const lineStart =
+      jsonInput.text.lastIndexOf("\n", jsonInput.cursor - 1) + 1;
+
+    const textBeforeCursorOnLine = jsonInput.text.slice(
+      lineStart,
+      jsonInput.cursor,
+    );
+
+    // До курсора на строке должны быть только отступы.
+    return /^[ \t]*$/.test(textBeforeCursorOnLine);
+  })();
+
   const suggestions =
     jsonContext &&
       jsonInput &&
       !isDismissed &&
-      !isBeforeExistingProperty
+      !isBeforeExistingProperty &&
+      canShowSuggestions
       ? getJsonSuggestions(
         jsonContext,
         apiSuggestionRules,

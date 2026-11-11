@@ -3,19 +3,17 @@ import {
   Modifier,
   SelectionState,
 } from "draft-js";
-
 import type { ContentState } from "draft-js";
 import type { JsonSuggestion } from "./jsonSuggestions";
-
 import { getJsonEditorInput } from "./getJsonEditorInput";
 import { getJsonContext } from "./getJsonContext";
+import { analyzeJsonDocument } from "./analyzeJsonDocument";
 
 type TextRange = {
   start: number;
   end: number;
 };
 
-// Находим конец строки JSON с учётом экранированных кавычек.
 function findStringEnd(text: string, start: number): number {
   let i = start + 1;
 
@@ -141,6 +139,41 @@ function locateOffset(content: ContentState, offset: number) {
   throw new Error("Offset is outside the document.");
 }
 
+function getPropertyIndent(
+  text: string,
+  cursor: number,
+  objectDepth: number,
+): string {
+  const analysis = analyzeJsonDocument(text);
+
+  const currentObject = analysis.objects
+    .filter(
+      (object) =>
+        object.start < cursor &&
+        cursor <= object.end,
+    )
+    .sort((a, b) => b.start - a.start)[0];
+
+  if (currentObject) {
+    // Берём оформление существующего свойства того же объекта.
+    for (const property of currentObject.properties) {
+      const lineStart =
+        text.lastIndexOf("\n", property.start - 1) + 1;
+
+      const prefix = text.slice(lineStart, property.start);
+
+      // Свойство должно начинаться с новой строки после отступа.
+      if (/^[ \t]+$/.test(prefix)) {
+        return prefix;
+      }
+    }
+  }
+
+  // Если примера нет, используем табуляцию на каждый уровень.
+  // Это соответствует нашей функции insertTab().
+  return "\t".repeat(objectDepth);
+}
+
 export function insertJsonSuggestion(
   editorState: EditorState,
   suggestion: JsonSuggestion,
@@ -171,11 +204,38 @@ export function insertJsonSuggestion(
     return editorState;
   }
 
+  let indentation = "";
+
+  if (
+    suggestion.kind === "property" &&
+    !context.insideString &&
+    range.start === range.end
+  ) {
+    const lineStart =
+      input.text.lastIndexOf("\n", range.start - 1) + 1;
+
+    const linePrefix = input.text.slice(lineStart, range.start);
+
+    // Автоотступ нужен только при вставке нового свойства
+    // в начале строки, где пока есть лишь пробелы или табуляции.
+    if (/^[ \t]*$/.test(linePrefix)) {
+      indentation = getPropertyIndent(
+        input.text,
+        input.cursor,
+        context.path.length + 1,
+      );
+
+      // Заменяем уже набранный отступ вместе с пустой позицией.
+      // Поэтому отступы не будут складываться.
+      range.start = lineStart;
+    }
+  }
+
   let replacement: string;
   let caret: number;
 
   if (suggestion.kind === "property") {
-    replacement = JSON.stringify(suggestion.propertyName);
+    replacement = indentation + JSON.stringify(suggestion.propertyName);
 
     const suffix = input.text.slice(range.end);
     const existingColon = suffix.match(/^[\x20\t\r\n]*:[\x20\t\r\n]*/);

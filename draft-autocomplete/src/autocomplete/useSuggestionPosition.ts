@@ -39,10 +39,36 @@ export function useSuggestionPosition(
       }
 
       const range = selection.getRangeAt(0);
-      const rect =
+
+      let rect =
         range.getClientRects()[0] ?? range.getBoundingClientRect();
 
-      // Если браузер не вернул геометрию курсора, список не показываем.
+      // На пустой строке Range иногда не возвращает геометрию.
+      // В этом случае используем прямоугольник пустого блока Draft.js.
+      if (rect.height === 0) {
+        const draftSelection = editorState.getSelection();
+
+        const currentBlock = editorState
+          .getCurrentContent()
+          .getBlockForKey(draftSelection.getStartKey());
+
+        if (currentBlock.getLength() === 0) {
+          const anchor = selection.anchorNode;
+
+          const anchorElement =
+            anchor instanceof Element
+              ? anchor
+              : anchor?.parentElement;
+
+          const blockElement =
+            anchorElement?.closest<HTMLElement>('[data-block="true"]');
+
+          if (blockElement && container.contains(blockElement)) {
+            rect = blockElement.getBoundingClientRect();
+          }
+        }
+      }
+
       if (rect.height === 0) {
         setPosition(null);
         return;
