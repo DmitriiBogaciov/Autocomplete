@@ -8,6 +8,7 @@ import { getJsonSuggestions } from "./autocomplete/jsonSuggestions";
 import { apiSuggestionRules } from "./autocomplete/apiSuggestionRules";
 import { insertJsonSuggestion } from "./autocomplete/insertJsonSuggestion";
 import type { JsonSuggestion } from "./autocomplete/jsonSuggestions";
+import { getExistingPropertyNames } from "./autocomplete/getExistingPropertyNames";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent } from "react";
 
@@ -23,9 +24,21 @@ function App() {
   const [isDismissed, setIsDismissed] = useState(false);
   const suggestionListRef = useRef<HTMLUListElement>(null);
 
+  const existingPropertyNames =
+    jsonInput && jsonContext?.kind === "property"
+      ? getExistingPropertyNames(
+        jsonInput.text,
+        jsonInput.cursor,
+      )
+      : [];
+
   const suggestions =
     jsonContext && !isDismissed
-      ? getJsonSuggestions(jsonContext, apiSuggestionRules)
+      ? getJsonSuggestions(
+        jsonContext,
+        apiSuggestionRules,
+        existingPropertyNames,
+      )
       : [];
 
   const editorContainerRef = useRef<HTMLDivElement>(null);

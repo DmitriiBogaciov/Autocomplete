@@ -51,10 +51,13 @@ function normalize(text: string): string {
 export function getJsonSuggestions(
     context: JsonContext,
     rules: JsonSuggestionRule[],
+    existingPropertyNames: readonly string[] = [],
 ): JsonSuggestion[] {
     if (context.kind === "none") {
         return [];
     }
+
+    const existingProperties = new Set(existingPropertyNames);
 
     const query = normalize(context.query);
 
@@ -70,6 +73,12 @@ export function getJsonSuggestions(
     const unique = new Map<string, JsonSuggestion>();
 
     for (const suggestion of candidates) {
+        if (
+            suggestion.kind === "property" &&
+            existingProperties.has(suggestion.propertyName)
+        ) {
+            continue;
+        }
         const searchableText = normalize(
             `${suggestion.label} ${suggestion.description}`,
         );
