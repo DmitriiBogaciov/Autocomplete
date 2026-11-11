@@ -228,9 +228,35 @@ export function getJsonContext(
                 frame.kind !== "object" ||
                 (
                     frame.stage !== "key-or-end" &&
-                    frame.stage !== "comma-or-end"
+                    frame.stage !== "comma-or-end" &&
+                    frame.stage !== "key"
                 )
             ) {
+                return { kind: "none" };
+            }
+
+            // "key" — ожидание следующего свойства после запятой.
+            // Разрешаем восстановиться после завершающей запятой.
+            stack.pop();
+            finishValue();
+            i++;
+            continue;
+        }
+
+        if (char === "]") {
+            if (!frame || frame.kind !== "array") {
+                return { kind: "none" };
+            }
+
+            const canClose =
+                frame.stage === "value-or-end" ||
+                frame.stage === "comma-or-end";
+
+            const hasTrailingComma =
+                frame.stage === "value" &&
+                frame.index > 0;
+
+            if (!canClose && !hasTrailingComma) {
                 return { kind: "none" };
             }
 
@@ -240,7 +266,6 @@ export function getJsonContext(
             continue;
         }
 
-        // Конец массива.
         if (char === "]") {
             if (
                 !frame ||
