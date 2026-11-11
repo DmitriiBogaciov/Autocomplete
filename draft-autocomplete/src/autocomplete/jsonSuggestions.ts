@@ -1,4 +1,5 @@
 import type { JsonContext, JsonPath } from "./getJsonContext";
+import type { JsonDocumentAnalysis } from "./analyzeJsonDocument";
 
 type JsonScalar = string | number | boolean | null;
 
@@ -22,9 +23,12 @@ export type JsonSuggestion =
 
 export type JsonSuggestionRule = {
     kind: "property" | "value";
-
-    // null в шаблоне означает любой индекс массива.
     path: Array<string | null>;
+
+    when?: Array<{
+        property: string;
+        equals: JsonScalar;
+    }>;
 
     suggestions: JsonSuggestion[];
 };
@@ -48,12 +52,95 @@ function normalize(text: string): string {
     return text.normalize("NFC").trim().toLowerCase();
 }
 
+type RuleEnvironment = {
+    analysis: JsonDocumentAnalysis;
+    cursor: number;
+};
+
+function pathsEqual(
+    first: JsonPath,
+    second: JsonPath,
+): boolean {
+    return (
+        first.length === second.length &&
+        first.every((part, index) => part === second[index])
+    );
+}
+
+function matchesConditions(
+    rule: JsonSuggestionRule,
+    context: JsonContext,
+    environment?: RuleEnvironment,
+): boolean {
+    if (!rule.when || rule.when.length === 0) {
+        return true;
+    }
+
+    if (
+        !environment ||
+        context.kind !== "value" ||
+        context.path.length === 0
+    ) {
+        return false;
+    }
+
+    const lastPart = context.path[context.path.length - 1];
+
+    // Пока условия поддерживаем для значений свойств объекта,
+    // а не для отдельных элементов массива.
+    if (typeof lastPart !== "string") {
+        return false;
+    }
+
+    const objectPath = context.path.slice(0, -1);
+
+    const currentObject = environment.analysis.objects.find(
+        (object) =>
+            pathsEqual(object.path, objectPath) &&
+            object.start < environment.cursor &&
+            environment.cursor <= object.end,
+    );
+
+    if (!currentObject) {
+        return false;
+    }
+
+    return rule.when.every((condition) => {
+        const properties = currentObject.properties.filter(
+            (property) => property.name === condition.property,
+        );
+
+        // При отсутствии или повторении ключа не угадываем значение.
+        if (properties.length !== 1) {
+            return false;
+        }
+
+        const expectedPath = [
+            ...objectPath,
+            condition.property,
+        ];
+
+        const values = environment.analysis.values.filter(
+            (entry) =>
+                pathsEqual(entry.path, expectedPath) &&
+                entry.start > currentObject.start &&
+                entry.end <= currentObject.end,
+        );
+
+        return (
+            values.length === 1 &&
+            values[0].value === condition.equals
+        );
+    });
+}
+
 export function getJsonSuggestions(
     context: JsonContext,
     rules: JsonSuggestionRule[],
     existingPropertyNames: readonly string[] = [],
     siblingPropertyNames: readonly string[] = [],
     documentValueSuggestions: readonly JsonSuggestion[] = [],
+    environment?: RuleEnvironment,
 ): JsonSuggestion[] {
     if (context.kind === "none") {
         return [];
@@ -67,7 +154,8 @@ export function getJsonSuggestions(
         .filter(
             (rule) =>
                 rule.kind === context.kind &&
-                matchesPath(rule.path, context.path),
+                matchesPath(rule.path, context.path) &&
+                matchesConditions(rule, context, environment),
         )
         .flatMap((rule) => rule.suggestions)
         .filter((suggestion) => suggestion.kind === context.kind);

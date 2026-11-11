@@ -56,21 +56,41 @@ const rootApiSuggestionRules: JsonSuggestionRule[] = [
   {
     kind: "value",
     path: ["description"],
+    when: [
+      { property: "method", equals: "GET" },
+    ],
     suggestions: [
       {
         kind: "value",
-        id: "description-list",
+        id: "description-get-list",
         label: "Returns a list of available resources.",
-        description: "",
+        description: "Suggested because method is GET.",
         priority: 10,
         value: "Returns a list of available resources.",
       },
       {
         kind: "value",
-        id: "description-create",
-        label: "Creates a new resource.",
-        description: "",
+        id: "description-get-details",
+        label: "Returns details of the specified resource.",
+        description: "Suggested because method is GET.",
         priority: 9,
+        value: "Returns details of the specified resource.",
+      },
+    ],
+  },
+  {
+    kind: "value",
+    path: ["description"],
+    when: [
+      { property: "method", equals: "POST" },
+    ],
+    suggestions: [
+      {
+        kind: "value",
+        id: "description-post-create",
+        label: "Creates a new resource.",
+        description: "Suggested because method is POST.",
+        priority: 10,
         value: "Creates a new resource.",
       },
     ],

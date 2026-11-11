@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Editor, EditorState, Modifier } from "draft-js";
 import "draft-js/dist/Draft.css";
 import { useSuggestionPosition } from "./autocomplete/useSuggestionPosition";
@@ -8,51 +8,80 @@ import { getJsonSuggestions } from "./autocomplete/jsonSuggestions";
 import { apiSuggestionRules } from "./autocomplete/apiSuggestionRules";
 import { insertJsonSuggestion } from "./autocomplete/insertJsonSuggestion";
 import type { JsonSuggestion } from "./autocomplete/jsonSuggestions";
-import { getDocumentPropertyInfo } from "./autocomplete/getExistingPropertyNames";
-import { getDocumentValueSuggestions } from "./autocomplete/getDocumentValueSuggestions";
+import { analyzeJsonDocument } from "./autocomplete/analyzeJsonDocument";
+import { getDocumentSuggestions } from "./autocomplete/getDocumentSuggestions";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent } from "react";
 
 function App() {
-  const [editorState, setEditorState] = useState(() =>
-    EditorState.createEmpty()
-  );
-  const jsonInput = getJsonEditorInput(editorState);
-  const jsonContext = jsonInput
-    ? getJsonContext(jsonInput.text, jsonInput.cursor)
-    : null;
+  const [editorState, setEditorState] = useState(() => EditorState.createEmpty());
   const [activeIndex, setActiveIndex] = useState(-1);
   const [isDismissed, setIsDismissed] = useState(false);
   const suggestionListRef = useRef<HTMLUListElement>(null);
 
-  const propertyInfo =
-    jsonInput && jsonContext?.kind === "property"
-      ? getDocumentPropertyInfo(
-        jsonInput.text,
+  const jsonInput = getJsonEditorInput(editorState);
+
+  const jsonContext = jsonInput
+    ? getJsonContext(jsonInput.text, jsonInput.cursor)
+    : null;
+
+  const content = editorState.getCurrentContent();
+
+  const documentAnalysis = useMemo(
+    () => analyzeJsonDocument(content.getPlainText("\n")),
+    [content],
+  );
+
+  const documentSuggestions =
+    jsonInput && jsonContext
+      ? getDocumentSuggestions(
+        documentAnalysis,
+        jsonContext,
         jsonInput.cursor,
       )
       : {
         existingNames: [],
         siblingNames: [],
+        valueSuggestions: [],
       };
 
-  const documentValueSuggestions =
-    jsonInput && jsonContext?.kind === "value"
-      ? getDocumentValueSuggestions(
-        jsonInput.text,
-        jsonInput.cursor,
-        jsonContext.path,
-      )
-      : [];
+  const isBeforeExistingProperty = (() => {
+    if (
+      !jsonInput ||
+      jsonContext?.kind !== "property" ||
+      jsonContext.insideString
+    ) {
+      return false;
+    }
+
+    const textAfterCursor = jsonInput.text.slice(jsonInput.cursor);
+
+    // Проверяем только остаток текущей строки.
+    const lineEnd = textAfterCursor.indexOf("\n");
+
+    const restOfLine =
+      lineEnd === -1
+        ? textAfterCursor
+        : textAfterCursor.slice(0, lineEnd);
+
+    return restOfLine.trimStart().startsWith('"');
+  })();
 
   const suggestions =
-    jsonContext && !isDismissed
+    jsonContext &&
+      jsonInput &&
+      !isDismissed &&
+      !isBeforeExistingProperty
       ? getJsonSuggestions(
         jsonContext,
         apiSuggestionRules,
-        propertyInfo.existingNames,
-        propertyInfo.siblingNames,
-        documentValueSuggestions,
+        documentSuggestions.existingNames,
+        documentSuggestions.siblingNames,
+        documentSuggestions.valueSuggestions,
+        {
+          analysis: documentAnalysis,
+          cursor: jsonInput.cursor,
+        },
       )
       : [];
 

@@ -1,13 +1,36 @@
 import type { JsonPath } from "./getJsonContext";
-import type { JsonSuggestion } from "./jsonSuggestions";
-import { haveSimilarPaths } from "./getExistingPropertyNames";
 
-type JsonScalar = string | number | boolean | null;
+export type JsonScalar = string | number | boolean | null;
+
+export type PropertyEntry = {
+  name: string;
+  start: number;
+  end: number;
+};
+
+export type ObjectScope = {
+  start: number;
+  end: number;
+  path: JsonPath;
+  properties: PropertyEntry[];
+};
+
+export type ValueEntry = {
+  path: JsonPath;
+  value: JsonScalar;
+  start: number;
+  end: number;
+};
+
+export type JsonDocumentAnalysis = {
+  objects: ObjectScope[];
+  values: ValueEntry[];
+};
 
 type Frame =
   | {
       kind: "object";
-      path: JsonPath;
+      scope: ObjectScope;
       currentKey: string | null;
     }
   | {
@@ -16,14 +39,12 @@ type Frame =
       index: number;
     };
 
-export function getDocumentValueSuggestions(
+export function analyzeJsonDocument(
   text: string,
-  cursor: number,
-  targetPath: JsonPath,
-): JsonSuggestion[] {
+): JsonDocumentAnalysis {
+  const objects: ObjectScope[] = [];
+  const values: ValueEntry[] = [];
   const stack: Frame[] = [];
-
-  const suggestions = new Map<string, JsonSuggestion>();
 
   let i = 0;
 
@@ -42,7 +63,7 @@ export function getDocumentValueSuggestions(
       return null;
     }
 
-    return [...parent.path, parent.currentKey];
+    return [...parent.scope.path, parent.currentKey];
   }
 
   function rememberValue(
@@ -50,30 +71,11 @@ export function getDocumentValueSuggestions(
     start: number,
     end: number,
   ) {
-    // Текущее редактируемое значение не является подсказкой
-    // само для себя.
-    if (start <= cursor && cursor <= end) {
-      return;
-    }
-
     const path = getValuePath();
 
-    if (!path || !haveSimilarPaths(path, targetPath)) {
-      return;
+    if (path !== null) {
+      values.push({ path, value, start, end });
     }
-
-    // Сериализация сохраняет различие между 3000 и "3000".
-    const identity = JSON.stringify(value);
-
-    suggestions.set(identity, {
-      kind: "value",
-      id: `document-value:${identity}`,
-      label: typeof value === "string" ? value : identity,
-      description:
-        "Previously used at a similar location in this document.",
-      priority: -1,
-      value,
-    });
   }
 
   while (i < text.length) {
@@ -132,8 +134,13 @@ export function getDocumentValueSuggestions(
         parent?.kind === "object" &&
         text[next] === ":"
       ) {
-        // Это имя свойства, а не значение.
         parent.currentKey = decoded;
+
+        parent.scope.properties.push({
+          name: decoded,
+          start,
+          end: i,
+        });
       } else {
         rememberValue(decoded, start, i);
       }
@@ -149,9 +156,18 @@ export function getDocumentValueSuggestions(
       }
 
       if (char === "{") {
+        const scope: ObjectScope = {
+          start: i,
+          end: text.length,
+          path,
+          properties: [],
+        };
+
+        objects.push(scope);
+
         stack.push({
           kind: "object",
-          path,
+          scope,
           currentKey: null,
         });
       } else {
@@ -173,7 +189,11 @@ export function getDocumentValueSuggestions(
         char === "}" ? "object" : "array";
 
       if (!parent || parent.kind !== expectedKind) {
-        return [];
+        return { objects: [], values: [] };
+      }
+
+      if (parent.kind === "object") {
+        parent.scope.end = i;
       }
 
       i++;
@@ -198,7 +218,6 @@ export function getDocumentValueSuggestions(
       continue;
     }
 
-    // Нестроковое значение: число, boolean или null.
     const start = i;
 
     while (
@@ -208,10 +227,8 @@ export function getDocumentValueSuggestions(
       i++;
     }
 
-    const token = text.slice(start, i);
-
     try {
-      const value: unknown = JSON.parse(token);
+      const value: unknown = JSON.parse(text.slice(start, i));
 
       if (
         value === null ||
@@ -223,10 +240,9 @@ export function getDocumentValueSuggestions(
         break;
       }
     } catch {
-      // Незавершённое или некорректное значение.
       break;
     }
   }
 
-  return [...suggestions.values()];
+  return { objects, values };
 }
