@@ -52,6 +52,8 @@ export function getJsonSuggestions(
     context: JsonContext,
     rules: JsonSuggestionRule[],
     existingPropertyNames: readonly string[] = [],
+    siblingPropertyNames: readonly string[] = [],
+    documentValueSuggestions: readonly JsonSuggestion[] = [],
 ): JsonSuggestion[] {
     if (context.kind === "none") {
         return [];
@@ -69,6 +71,37 @@ export function getJsonSuggestions(
         )
         .flatMap((rule) => rule.suggestions)
         .filter((suggestion) => suggestion.kind === context.kind);
+
+    if (context.kind === "property") {
+        for (const name of siblingPropertyNames) {
+            const alreadyIncluded = candidates.some(
+                (suggestion) =>
+                    suggestion.kind === "property" &&
+                    suggestion.propertyName === name,
+            );
+
+            if (alreadyIncluded) {
+                continue;
+            }
+
+            candidates.push({
+                kind: "property",
+                id: `document-property:${name}`,
+                label: name,
+                description: "Used at a similar location in this document.",
+                priority: -1,
+                propertyName: name,
+            });
+        }
+    }
+
+    if (context.kind === "value") {
+        candidates.push(
+            ...documentValueSuggestions.filter(
+                (suggestion) => suggestion.kind === "value",
+            ),
+        );
+    }
 
     const unique = new Map<string, JsonSuggestion>();
 

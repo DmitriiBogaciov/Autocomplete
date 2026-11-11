@@ -1,6 +1,6 @@
 import type { JsonSuggestionRule } from "./jsonSuggestions";
 
-export const apiSuggestionRules: JsonSuggestionRule[] = [
+const rootApiSuggestionRules: JsonSuggestionRule[] = [
   {
     kind: "property",
     path: [],
@@ -105,4 +105,15 @@ export const apiSuggestionRules: JsonSuggestionRule[] = [
       },
     ],
   },
+];
+
+export const apiSuggestionRules: JsonSuggestionRule[] = [
+  ...rootApiSuggestionRules,
+
+  ...rootApiSuggestionRules.map(
+    (rule): JsonSuggestionRule => ({
+      ...rule,
+      path: [null, ...rule.path],
+    }),
+  ),
 ];
