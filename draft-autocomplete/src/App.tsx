@@ -10,8 +10,8 @@ import { insertJsonSuggestion } from "./autocomplete/insertJsonSuggestion";
 import type { JsonSuggestion } from "./autocomplete/jsonSuggestions";
 import { analyzeJsonDocument } from "./autocomplete/analyzeJsonDocument";
 import { getDocumentSuggestions } from "./autocomplete/getDocumentSuggestions";
-import { autocompleteConfig } from "./autocomplete/autocompleteConfig";
 import { getConfiguredSuggestions } from "./autocomplete/getConfiguredSuggestions";
+import { autocompleteConfig, configurationErrors } from "./autocomplete/autocompleteConfig";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent } from "react";
 
@@ -305,6 +305,29 @@ function App() {
     handleEditorChange(focusedState);
 
     return true;
+  }
+
+  {
+    configurationErrors.length > 0 && (
+      <div
+        role="alert"
+        style={{
+          marginBottom: 16,
+          padding: 12,
+          background: "#fff1f0",
+          color: "#9f1239",
+          textAlign: "left",
+        }}
+      >
+        <strong>Некоторые конфигурации не загружены:</strong>
+
+        <ul>
+          {configurationErrors.map((error) => (
+            <li key={error}>{error}</li>
+          ))}
+        </ul>
+      </div>
+    )
   }
 
   return (

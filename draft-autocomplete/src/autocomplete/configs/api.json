@@ -1,0 +1,73 @@
+{
+  "id": "api",
+  "label": "API operations",
+  "objectPaths": [[], [null]],
+  "properties": [
+    {
+      "name": "method",
+      "description": "HTTP method of the operation.",
+      "priority": 10,
+      "contextWeight": 3,
+      "values": [
+        { "value": "GET", "priority": 10 },
+        { "value": "POST", "priority": 9 },
+        { "value": "PUT", "priority": 8 },
+        { "value": "PATCH", "priority": 7 },
+        { "value": "DELETE", "priority": 6 }
+      ]
+    },
+    {
+      "name": "path",
+      "description": "Endpoint path.",
+      "priority": 9,
+      "contextWeight": 2,
+      "values": [
+        { "value": "/users", "priority": 10 },
+        { "value": "/products", "priority": 9 }
+      ]
+    },
+    {
+      "name": "description",
+      "description": "Description of the operation.",
+      "priority": 6,
+      "contextWeight": 0,
+      "values": [
+        {
+          "value": "Returns a list of available resources.",
+          "priority": 10,
+          "when": [
+            { "property": "method", "equals": "GET" }
+          ]
+        },
+        {
+          "value": "Creates a new resource.",
+          "priority": 10,
+          "when": [
+            { "property": "method", "equals": "POST" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "errors",
+      "description": "Possible error messages.",
+      "priority": 7,
+      "contextWeight": 0,
+      "arrayItems": true,
+      "values": [
+        {
+          "value": "400 Bad Request: invalid input data.",
+          "priority": 10
+        },
+        {
+          "value": "401 Unauthorized: missing or invalid access token.",
+          "priority": 9
+        },
+        {
+          "value": "404 Not Found: requested resource does not exist.",
+          "priority": 8
+        }
+      ]
+    }
+  ]
+}

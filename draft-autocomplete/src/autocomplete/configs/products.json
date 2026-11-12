@@ -1,0 +1,34 @@
+{
+  "id": "products",
+  "label": "Products",
+  "objectPaths": [[], [null]],
+  "properties": [
+    {
+      "name": "sku",
+      "description": "Product identifier.",
+      "priority": 10,
+      "contextWeight": 3
+    },
+    {
+      "name": "price",
+      "description": "Product price.",
+      "priority": 9,
+      "contextWeight": 2,
+      "values": [
+        { "value": 100 },
+        { "value": 250 }
+      ]
+    },
+    {
+      "name": "currency",
+      "description": "Price currency.",
+      "priority": 8,
+      "contextWeight": 1,
+      "values": [
+        { "value": "EUR" },
+        { "value": "USD" },
+        { "value": "CZK" }
+      ]
+    }
+  ]
+}
