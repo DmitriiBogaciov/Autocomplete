@@ -11,6 +11,7 @@ export type JsonSuggestion =
         description: string;
         priority: number;
         propertyName: string;
+        contextWeight?: number;
     }
     | {
         kind: "value";
@@ -52,7 +53,7 @@ function normalize(text: string): string {
     return text.normalize("NFC").trim().toLowerCase();
 }
 
-type RuleEnvironment = {
+export type RuleEnvironment = {
     analysis: JsonDocumentAnalysis;
     cursor: number;
 };

@@ -4,12 +4,14 @@ import "draft-js/dist/Draft.css";
 import { useSuggestionPosition } from "./autocomplete/useSuggestionPosition";
 import { getJsonEditorInput } from "./autocomplete/getJsonEditorInput";
 import { getJsonContext } from "./autocomplete/getJsonContext.ts";
-import { getJsonSuggestions } from "./autocomplete/jsonSuggestions";
-import { apiSuggestionRules } from "./autocomplete/apiSuggestionRules";
+// import { getJsonSuggestions } from "./autocomplete/jsonSuggestions";
+// import { apiSuggestionRules } from "./autocomplete/apiSuggestionRules";
 import { insertJsonSuggestion } from "./autocomplete/insertJsonSuggestion";
 import type { JsonSuggestion } from "./autocomplete/jsonSuggestions";
 import { analyzeJsonDocument } from "./autocomplete/analyzeJsonDocument";
 import { getDocumentSuggestions } from "./autocomplete/getDocumentSuggestions";
+import { autocompleteConfig } from "./autocomplete/autocompleteConfig";
+import { getConfiguredSuggestions } from "./autocomplete/getConfiguredSuggestions";
 import { createPortal } from "react-dom";
 import type { KeyboardEvent } from "react";
 
@@ -100,12 +102,10 @@ function App() {
       !isDismissed &&
       !isBeforeExistingProperty &&
       canShowSuggestions
-      ? getJsonSuggestions(
+      ? getConfiguredSuggestions(
         jsonContext,
-        apiSuggestionRules,
-        documentSuggestions.existingNames,
-        documentSuggestions.siblingNames,
-        documentSuggestions.valueSuggestions,
+        autocompleteConfig,
+        documentSuggestions,
         {
           analysis: documentAnalysis,
           cursor: jsonInput.cursor,

@@ -12,6 +12,7 @@ const rootApiSuggestionRules: JsonSuggestionRule[] = [
         description: "HTTP method of the operation.",
         priority: 10,
         propertyName: "method",
+        contextWeight: 3,
       },
       {
         kind: "property",
@@ -20,6 +21,7 @@ const rootApiSuggestionRules: JsonSuggestionRule[] = [
         description: "Endpoint path, for example /users.",
         priority: 9,
         propertyName: "path",
+        contextWeight: 2,
       },
       {
         kind: "property",
@@ -28,6 +30,7 @@ const rootApiSuggestionRules: JsonSuggestionRule[] = [
         description: "What the operation does.",
         priority: 8,
         propertyName: "description",
+        contextWeight: 0,
       },
       {
         kind: "property",
@@ -36,6 +39,7 @@ const rootApiSuggestionRules: JsonSuggestionRule[] = [
         description: "Possible error messages.",
         priority: 7,
         propertyName: "errors",
+        contextWeight: 0,
       },
     ],
   },
