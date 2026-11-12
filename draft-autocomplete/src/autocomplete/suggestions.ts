@@ -1,5 +1,7 @@
 import type { JsonContext, JsonPath } from "./getJsonContext";
 import type { JsonDocumentAnalysis } from "./analyzeJsonDocument";
+import type { AutocompleteConfig } from "./configuration";
+import type { DocumentSuggestions } from "./getDocumentSuggestions";
 
 type JsonScalar = string | number | boolean | null;
 
@@ -87,8 +89,8 @@ function matchesConditions(
 
     const lastPart = context.path[context.path.length - 1];
 
-    // Пока условия поддерживаем для значений свойств объекта,
-    // а не для отдельных элементов массива.
+    // Conditions currently apply to object property values,
+    // not individual array elements.
     if (typeof lastPart !== "string") {
         return false;
     }
@@ -111,7 +113,7 @@ function matchesConditions(
             (property) => property.name === condition.property,
         );
 
-        // При отсутствии или повторении ключа не угадываем значение.
+        // Do not infer a value when the property is missing or duplicated.
         if (properties.length !== 1) {
             return false;
         }
@@ -142,6 +144,7 @@ export function getJsonSuggestions(
     siblingPropertyNames: readonly string[] = [],
     documentValueSuggestions: readonly JsonSuggestion[] = [],
     environment?: RuleEnvironment,
+    getPriority: (suggestion: JsonSuggestion) => number = (suggestion) => suggestion.priority,
 ): JsonSuggestion[] {
     if (context.kind === "none") {
         return [];
@@ -221,17 +224,136 @@ export function getJsonSuggestions(
         }
     }
 
-    return [...unique.values()].sort((a, b) => {
-        const aStartsWithQuery = normalize(a.label).startsWith(query);
-        const bStartsWithQuery = normalize(b.label).startsWith(query);
+    const ranked = [...unique.values()].map((suggestion) => ({
+        suggestion,
+        startsWithQuery: normalize(suggestion.label).startsWith(query),
+        score: getPriority(suggestion),
+    }));
 
-        if (aStartsWithQuery !== bStartsWithQuery) {
-            return aStartsWithQuery ? -1 : 1;
+    ranked.sort((a, b) => {
+        if (a.startsWithQuery !== b.startsWithQuery) {
+            return a.startsWithQuery ? -1 : 1;
         }
 
         return (
-            b.priority - a.priority ||
-            a.label.localeCompare(b.label, "en")
+            b.score - a.score ||
+            a.suggestion.label.localeCompare(b.suggestion.label, "en")
         );
     });
+
+    return ranked.map((item) => item.suggestion);
+}
+
+function calculateGroupBoosts(
+    context: JsonContext,
+    config: AutocompleteConfig,
+    environment: RuleEnvironment,
+): Map<string, number> {
+    const boosts = new Map<string, number>();
+
+    if (context.kind !== "property") {
+        return boosts;
+    }
+
+    const currentObject = environment.analysis.objects.find(
+        (object) =>
+            object.start < environment.cursor &&
+            environment.cursor <= object.end &&
+            pathsEqual(object.path, context.path),
+    );
+
+    if (!currentObject) {
+        return boosts;
+    }
+
+    const presentProperties = new Set(
+        currentObject.properties.map((property) => property.name),
+    );
+
+    const factor = Number.isFinite(config.groupBoostFactor)
+        ? Math.max(0, config.groupBoostFactor)
+        : 0;
+
+    for (const group of config.groups) {
+        const members = new Map<string, number>();
+
+        for (const rule of group.rules) {
+            if (
+                rule.kind !== "property" ||
+                !matchesPath(rule.path, context.path)
+            ) {
+                continue;
+            }
+
+            for (const suggestion of rule.suggestions) {
+                if (suggestion.kind !== "property") {
+                    continue;
+                }
+
+                const configuredWeight = suggestion.contextWeight ?? 0;
+
+                const weight = Number.isFinite(configuredWeight)
+                    ? Math.max(0, configuredWeight)
+                    : 0;
+
+                // Count each property only once within a group.
+                members.set(
+                    suggestion.propertyName,
+                    Math.max(
+                        members.get(suggestion.propertyName) ?? 0,
+                        weight,
+                    ),
+                );
+            }
+        }
+
+        let groupScore = 0;
+
+        for (const [name, weight] of members) {
+            if (presentProperties.has(name)) {
+                groupScore += weight;
+            }
+        }
+
+        const groupBoost = groupScore * factor;
+
+        for (const name of members.keys()) {
+            // Shared properties receive the largest group boost.
+            boosts.set(
+                name,
+                Math.max(boosts.get(name) ?? 0, groupBoost),
+            );
+        }
+    }
+
+    return boosts;
+}
+
+export function getConfiguredSuggestions(
+    context: JsonContext,
+    config: AutocompleteConfig,
+    fromDocument: DocumentSuggestions,
+    environment: RuleEnvironment,
+): JsonSuggestion[] {
+    const boosts = calculateGroupBoosts(
+        context,
+        config,
+        environment,
+    );
+
+    return getJsonSuggestions(
+        context,
+        config.groups.flatMap((group) => group.rules),
+        fromDocument.existingNames,
+        fromDocument.siblingNames,
+        fromDocument.valueSuggestions,
+        environment,
+        (suggestion) =>
+            suggestion.priority +
+            (
+                suggestion.kind === "property"
+                    ? boosts.get(suggestion.propertyName) ?? 0
+                    : 0
+            ),
+    );
 }

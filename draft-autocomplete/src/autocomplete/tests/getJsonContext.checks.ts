@@ -1,5 +1,5 @@
-import { getJsonContext } from "./getJsonContext";
-import type { JsonContext } from "./getJsonContext";
+import { getJsonContext } from "../getJsonContext";
+import type { JsonContext } from "../getJsonContext";
 
 type TestCase = {
   name: string;

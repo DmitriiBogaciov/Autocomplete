@@ -1,338 +1,58 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { Editor, EditorState, Modifier } from "draft-js";
-import "draft-js/dist/Draft.css";
-import { useSuggestionPosition } from "./autocomplete/useSuggestionPosition";
-import { getJsonEditorInput } from "./autocomplete/getJsonEditorInput";
-import { getJsonContext } from "./autocomplete/getJsonContext.ts";
-// import { getJsonSuggestions } from "./autocomplete/jsonSuggestions";
-// import { apiSuggestionRules } from "./autocomplete/apiSuggestionRules";
-import { insertJsonSuggestion } from "./autocomplete/insertJsonSuggestion";
-import type { JsonSuggestion } from "./autocomplete/jsonSuggestions";
-import { analyzeJsonDocument } from "./autocomplete/analyzeJsonDocument";
-import { getDocumentSuggestions } from "./autocomplete/getDocumentSuggestions";
-import { getConfiguredSuggestions } from "./autocomplete/getConfiguredSuggestions";
-import { autocompleteConfig, configurationErrors } from "./autocomplete/autocompleteConfig";
+import { Editor } from "draft-js";
 import { createPortal } from "react-dom";
-import type { KeyboardEvent } from "react";
+import "draft-js/dist/Draft.css";
+
+import { useAutocomplete } from "./autocomplete/useAutocomplete";
+import {
+  autocompleteConfig,
+  configurationErrors,
+} from "./autocomplete/configuration";
 
 function App() {
-  const [editorState, setEditorState] = useState(() => EditorState.createEmpty());
-  const [activeIndex, setActiveIndex] = useState(-1);
-  const [isDismissed, setIsDismissed] = useState(false);
-  const suggestionListRef = useRef<HTMLUListElement>(null);
-
-  const jsonInput = getJsonEditorInput(editorState);
-
-  const jsonContext = jsonInput
-    ? getJsonContext(jsonInput.text, jsonInput.cursor)
-    : null;
-
-  const content = editorState.getCurrentContent();
-
-  const documentAnalysis = useMemo(
-    () => analyzeJsonDocument(content.getPlainText("\n")),
-    [content],
-  );
-
-  const documentSuggestions =
-    jsonInput && jsonContext
-      ? getDocumentSuggestions(
-        documentAnalysis,
-        jsonContext,
-        jsonInput.cursor,
-      )
-      : {
-        existingNames: [],
-        siblingNames: [],
-        valueSuggestions: [],
-      };
-
-  const isBeforeExistingProperty = (() => {
-    if (
-      !jsonInput ||
-      jsonContext?.kind !== "property" ||
-      jsonContext.insideString
-    ) {
-      return false;
-    }
-
-    const textAfterCursor = jsonInput.text.slice(jsonInput.cursor);
-
-    // Проверяем только остаток текущей строки.
-    const lineEnd = textAfterCursor.indexOf("\n");
-
-    const restOfLine =
-      lineEnd === -1
-        ? textAfterCursor
-        : textAfterCursor.slice(0, lineEnd);
-
-    return restOfLine.trimStart().startsWith('"');
-  })();
-
-  const canShowSuggestions = (() => {
-    if (!jsonInput || !jsonContext || jsonContext.kind === "none") {
-      return false;
-    }
-
-    // Подсказки значений работают как прежде.
-    if (jsonContext.kind === "value") {
-      return true;
-    }
-
-    // Пользователь уже редактирует имя свойства.
-    if (jsonContext.insideString) {
-      return true;
-    }
-
-    const lineStart =
-      jsonInput.text.lastIndexOf("\n", jsonInput.cursor - 1) + 1;
-
-    const textBeforeCursorOnLine = jsonInput.text.slice(
-      lineStart,
-      jsonInput.cursor,
-    );
-
-    // До курсора на строке должны быть только отступы.
-    return /^[ \t]*$/.test(textBeforeCursorOnLine);
-  })();
-
-  const suggestions =
-    jsonContext &&
-      jsonInput &&
-      !isDismissed &&
-      !isBeforeExistingProperty &&
-      canShowSuggestions
-      ? getConfiguredSuggestions(
-        jsonContext,
-        autocompleteConfig,
-        documentSuggestions,
-        {
-          analysis: documentAnalysis,
-          cursor: jsonInput.cursor,
-        },
-      )
-      : [];
-
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-
-  const suggestionPosition = useSuggestionPosition(
-    editorContainerRef,
+  const {
     editorState,
-    suggestions.length > 0,
-  );
-
-  function handleSuggestionSelect(suggestion: JsonSuggestion) {
-    const nextState = insertJsonSuggestion(
-      editorState,
-      suggestion,
-    );
-
-    if (nextState === editorState) {
-      return;
-    }
-
-    setEditorState(nextState);
-    setActiveIndex(-1);
-    setIsDismissed(suggestion.kind === "value");
-  }
-
-  function handleEditorChange(nextState: EditorState) {
-    const contentChanged = nextState.getCurrentContent() !== editorState.getCurrentContent();
-
-    const selectionChanged = !nextState.getSelection().equals(editorState.getSelection());
-
-    if (contentChanged || selectionChanged) {
-      setActiveIndex(-1);
-      setIsDismissed(false);
-    }
-
-    setEditorState(nextState);
-  }
-
-  useEffect(() => {
-    const list = suggestionListRef.current;
-
-    const button = list?.querySelector<HTMLButtonElement>(
-      '[data-active="true"]',
-    );
-
-    if (!list || !button) {
-      return;
-    }
-
-    const listRect = list.getBoundingClientRect();
-    const buttonRect = button.getBoundingClientRect();
-
-    const visibleTop = listRect.top + list.clientTop;
-    const visibleBottom = visibleTop + list.clientHeight;
-
-    if (buttonRect.top < visibleTop) {
-      list.scrollTop -= visibleTop - buttonRect.top;
-    } else if (buttonRect.bottom > visibleBottom) {
-      list.scrollTop += buttonRect.bottom - visibleBottom;
-    }
-  }, [activeIndex, suggestions.length, suggestionPosition]);
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (
-      event.nativeEvent.isComposing ||
-      event.ctrlKey ||
-      event.metaKey ||
-      event.shiftKey
-    ) {
-      return;
-    }
-
-    const isMenuVisible =
-      !isDismissed &&
-      suggestions.length > 0 &&
-      suggestionPosition !== null;
-
-    function consumeEvent() {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    // Пока удерживается Alt, стрелки листают подсказки.
-    if (
-      event.altKey &&
-      (event.key === "ArrowDown" || event.key === "ArrowUp")
-    ) {
-      if (!isMenuVisible) {
-        return;
-      }
-
-      consumeEvent();
-
-      const direction = event.key === "ArrowDown" ? 1 : -1;
-
-      setActiveIndex((index) => {
-        if (index < 0) {
-          return direction === 1 ? 0 : suggestions.length - 1;
-        }
-
-        return (
-          index + direction + suggestions.length
-        ) % suggestions.length;
-      });
-
-      return;
-    }
-
-    // Другие сочетания с Alt оставляем браузеру.
-    if (event.altKey) {
-      if (
-        isMenuVisible &&
-        (event.key === "Enter" || event.key === "Tab")
-      ) {
-        consumeEvent();
-
-        const suggestion = suggestions[activeIndex];
-
-        if (suggestion !== undefined) {
-          handleSuggestionSelect(suggestion);
-        }
-      }
-
-      return;
-    }
-
-    if (event.key === "Escape" && isMenuVisible) {
-      consumeEvent();
-      setIsDismissed(true);
-      setActiveIndex(-1);
-      return;
-    }
-
-    const selectedSuggestion =
-      isMenuVisible && activeIndex >= 0
-        ? suggestions[activeIndex]
-        : undefined;
-
-    if (
-      (event.key === "Enter" || event.key === "Tab") &&
-      selectedSuggestion !== undefined
-    ) {
-      consumeEvent();
-      handleSuggestionSelect(selectedSuggestion);
-      return;
-    }
-
-    // Обычные стрелки возвращают управление редактору.
-    if (
-      event.key === "ArrowDown" ||
-      event.key === "ArrowUp" ||
-      event.key === "ArrowLeft" ||
-      event.key === "ArrowRight"
-    ) {
-      setActiveIndex(-1);
-      return;
-    }
-
-    if (event.key === "Tab" && insertTab()) {
-      consumeEvent();
-    }
-
-    // Enter без выбранной подсказки создаёт новую строку.
-  }
-  function insertTab(): boolean {
-    const selection = editorState.getSelection();
-
-    // Пока поддерживаем вставку только в позиции курсора.
-    // Выделенный текст не заменяем табуляцией.
-    if (!selection.isCollapsed()) {
-      return false;
-    }
-
-    const nextContent = Modifier.insertText(
-      editorState.getCurrentContent(),
-      selection,
-      "\t",
-      editorState.getCurrentInlineStyle(),
-    );
-
-    const nextState = EditorState.push(
-      editorState,
-      nextContent,
-      "insert-characters",
-    );
-
-    const focusedState = EditorState.forceSelection(
-      nextState,
-      nextContent.getSelectionAfter(),
-    );
-
-    handleEditorChange(focusedState);
-
-    return true;
-  }
-
-  {
-    configurationErrors.length > 0 && (
-      <div
-        role="alert"
-        style={{
-          marginBottom: 16,
-          padding: 12,
-          background: "#fff1f0",
-          color: "#9f1239",
-          textAlign: "left",
-        }}
-      >
-        <strong>Некоторые конфигурации не загружены:</strong>
-
-        <ul>
-          {configurationErrors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
-      </div>
-    )
-  }
+    editorContainerRef,
+    suggestionListRef,
+    suggestions,
+    suggestionPosition,
+    activeIndex,
+    jsonInput,
+    jsonContext,
+    handleEditorChange,
+    handleKeyDown,
+    handleSuggestionSelect,
+  } = useAutocomplete(autocompleteConfig);
 
   return (
-    <div style={{ maxWidth: 800, margin: "40px auto", fontFamily: "sans-serif" }}>
+    <div
+      style={{
+        maxWidth: 800,
+        margin: "40px auto",
+        fontFamily: "sans-serif",
+      }}
+    >
       <h1>Draft.js — Autocomplete</h1>
+
+      {configurationErrors.length > 0 && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            background: "#fff1f0",
+            color: "#9f1239",
+            textAlign: "left",
+          }}
+        >
+          <strong>Some configurations could not be loaded:</strong>
+
+          <ul>
+            {configurationErrors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div
         ref={editorContainerRef}
@@ -351,7 +71,7 @@ function App() {
         <Editor
           editorState={editorState}
           onChange={handleEditorChange}
-          placeholder="Начните вводить JSON…"
+          placeholder="Start typing JSON…"
         />
       </div>
 
@@ -394,14 +114,20 @@ function App() {
                     textAlign: "left",
                     overflowWrap: "anywhere",
                     cursor: "pointer",
-                    background: index === activeIndex ? "#dbeafe" : "#fff",
+                    background:
+                      index === activeIndex ? "#dbeafe" : "#fff",
                     color: "#111",
                   }}
                 >
                   <strong>{suggestion.label}</strong>
 
                   {suggestion.description && (
-                    <span style={{ display: "block", marginTop: 4 }}>
+                    <span
+                      style={{
+                        display: "block",
+                        marginTop: 4,
+                      }}
+                    >
                       {suggestion.description}
                     </span>
                   )}
@@ -411,6 +137,7 @@ function App() {
           </ul>,
           document.body,
         )}
+
       {jsonContext && (
         <pre
           style={{
@@ -424,9 +151,10 @@ function App() {
           {JSON.stringify(jsonContext, null, 2)}
         </pre>
       )}
+
       {jsonInput && (
         <div style={{ marginTop: 16, textAlign: "left" }}>
-          <div>Позиция курсора в документе: {jsonInput.cursor}</div>
+          <div>Document cursor position: {jsonInput.cursor}</div>
 
           <pre
             style={{
@@ -443,17 +171,6 @@ function App() {
           </pre>
         </div>
       )}
-
-      {/* {wordContext && (
-        <div style={{ marginTop: 16 }}>
-          <div>Введённая часть: {wordContext.prefix}</div>
-          <div>Слово целиком: {wordContext.word}</div>
-          <div>
-            Границы слова: {wordContext.start}–{wordContext.end}
-          </div>
-        </div>
-      )} */}
-
     </div>
   );
 }

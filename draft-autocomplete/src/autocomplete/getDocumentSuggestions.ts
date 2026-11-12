@@ -1,5 +1,5 @@
 import type { JsonContext, JsonPath } from "./getJsonContext";
-import type { JsonSuggestion } from "./jsonSuggestions";
+import type { JsonSuggestion } from "./suggestions";
 import type { JsonDocumentAnalysis } from "./analyzeJsonDocument";
 
 export type DocumentSuggestions = {

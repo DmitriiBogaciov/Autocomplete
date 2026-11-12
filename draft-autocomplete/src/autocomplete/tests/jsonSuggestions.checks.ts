@@ -1,12 +1,12 @@
-import { getJsonContext } from "./getJsonContext";
-import { analyzeJsonDocument } from "./analyzeJsonDocument";
-import { getDocumentSuggestions } from "./getDocumentSuggestions";
-import { getJsonSuggestions } from "./jsonSuggestions";
+import { getJsonContext } from "../getJsonContext";
+import { analyzeJsonDocument } from "../analyzeJsonDocument";
+import { getDocumentSuggestions } from "../getDocumentSuggestions";
+import { getJsonSuggestions } from "../suggestions";
 
 import type {
   JsonSuggestion,
   JsonSuggestionRule,
-} from "./jsonSuggestions";
+} from "../suggestions";
 
 type Scalar = string | number | boolean | null;
 

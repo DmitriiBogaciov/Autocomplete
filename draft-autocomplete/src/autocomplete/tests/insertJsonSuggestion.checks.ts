@@ -4,9 +4,9 @@ import {
   SelectionState,
 } from "draft-js";
 
-import { insertJsonSuggestion } from "./insertJsonSuggestion";
-import { getJsonEditorInput } from "./getJsonEditorInput";
-import type { JsonSuggestion } from "./jsonSuggestions";
+import { insertJsonSuggestion } from "../insertJsonSuggestion";
+import { getJsonEditorInput } from "../getJsonEditorInput";
+import type { JsonSuggestion } from "../suggestions";
 
 type TestCase = {
   name: string;

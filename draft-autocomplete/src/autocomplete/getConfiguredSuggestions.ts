@@ -1,15 +1,15 @@
 import type { JsonContext, JsonPath } from "./getJsonContext";
-import type { AutocompleteConfig } from "./autocompleteConfig";
 import type { DocumentSuggestions } from "./getDocumentSuggestions";
+import type { AutocompleteConfig } from "./configuration";
 
 import {
   getJsonSuggestions,
-} from "./jsonSuggestions";
+} from "./suggestions";
 
 import type {
   JsonSuggestion,
   RuleEnvironment,
-} from "./jsonSuggestions";
+} from "./suggestions";
 
 function matchesPath(
   pattern: Array<string | null>,

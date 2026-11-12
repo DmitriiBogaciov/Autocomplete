@@ -4,7 +4,7 @@ import {
   SelectionState,
 } from "draft-js";
 import type { ContentState } from "draft-js";
-import type { JsonSuggestion } from "./jsonSuggestions";
+import type { JsonSuggestion } from "./suggestions";
 import { getJsonEditorInput } from "./getJsonEditorInput";
 import { getJsonContext } from "./getJsonContext";
 import { analyzeJsonDocument } from "./analyzeJsonDocument";
