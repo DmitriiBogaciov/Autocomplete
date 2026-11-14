@@ -13,15 +13,18 @@ import { getConfiguredSuggestions } from "./suggestions";
 import type { JsonSuggestion } from "./suggestions";
 import type { AutocompleteConfig } from "./configuration";
 
+export type EditorMode = "plain" | "json";
+
 export function useAutocomplete(config: AutocompleteConfig) {
     const [editorState, setEditorState] = useState(() => EditorState.createEmpty());
     const [activeIndex, setActiveIndex] = useState(-1);
     const [isDismissed, setIsDismissed] = useState(false);
+    const [mode, setMode] = useState<EditorMode>("json");
     const suggestionListRef = useRef<HTMLUListElement>(null);
 
     const jsonInput = useMemo(
-        () => getJsonEditorInput(editorState),
-        [editorState],
+        () => mode === "json" ? getJsonEditorInput(editorState) : null,
+        [editorState, mode],
     );
 
     const jsonContext = useMemo(
@@ -35,8 +38,12 @@ export function useAutocomplete(config: AutocompleteConfig) {
     const content = editorState.getCurrentContent();
 
     const documentAnalysis = useMemo(
-        () => analyzeJsonDocument(content.getPlainText("\n")),
-        [content],
+        () => mode === "json" ? analyzeJsonDocument(content.getPlainText("\n"))
+            : {
+                objects: [],
+                values: [],
+            },
+        [content, mode],
     );
 
     const documentSuggestions = useMemo(
@@ -134,7 +141,20 @@ export function useAutocomplete(config: AutocompleteConfig) {
         suggestions.length > 0,
     );
 
+    function handleModeChange(nextMode: EditorMode) {
+        if (nextMode === mode) {
+            return;
+        }
+        setMode(nextMode);
+        setActiveIndex(-1);
+        setIsDismissed(false);
+    }
+
     function handleSuggestionSelect(suggestion: JsonSuggestion) {
+        if (mode !== "json") {
+            return;
+        }
+
         const nextState = insertJsonSuggestion(
             editorState,
             suggestion,
@@ -187,12 +207,21 @@ export function useAutocomplete(config: AutocompleteConfig) {
     }, [activeIndex, suggestions.length, suggestionPosition]);
 
     function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-        if (
-            event.nativeEvent.isComposing ||
-            event.ctrlKey ||
-            event.metaKey ||
-            event.shiftKey
-        ) {
+        if (mode === "plain") {
+            if (
+                event.key === "Tab" &&
+                !event.nativeEvent.isComposing &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.altKey &&
+                !event.shiftKey
+            ) {
+                if (insertTab()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            }
+
             return;
         }
 
@@ -316,6 +345,7 @@ export function useAutocomplete(config: AutocompleteConfig) {
 
     return {
         editorState,
+        mode,
         editorContainerRef,
         suggestionListRef,
         suggestions,
@@ -326,5 +356,6 @@ export function useAutocomplete(config: AutocompleteConfig) {
         handleEditorChange,
         handleKeyDown,
         handleSuggestionSelect,
+        handleModeChange,
     };
 }

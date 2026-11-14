@@ -11,6 +11,7 @@ import {
 function App() {
   const {
     editorState,
+    mode,
     editorContainerRef,
     suggestionListRef,
     suggestions,
@@ -21,6 +22,7 @@ function App() {
     handleEditorChange,
     handleKeyDown,
     handleSuggestionSelect,
+    handleModeChange,
   } = useAutocomplete(autocompleteConfig);
 
   return (
@@ -32,6 +34,29 @@ function App() {
       }}
     >
       <h1>Draft.js — Autocomplete</h1>
+
+      <label
+        style={{
+          display: "block",
+          marginBottom: 16,
+          textAlign: "left",
+        }}
+      >
+        Document mode: {" "}
+        <select
+          value={mode}
+          onChange={(event) => {
+            const nextMode = event.target.value;
+
+            if (nextMode === "plain" || nextMode === "json") {
+              handleModeChange(nextMode);
+            }
+          }}
+        >
+          <option value="plain">Plain text</option>
+          <option value="json">JSON</option>
+        </select>
+      </label>
 
       {configurationErrors.length > 0 && (
         <div
@@ -71,7 +96,9 @@ function App() {
         <Editor
           editorState={editorState}
           onChange={handleEditorChange}
-          placeholder="Start typing JSON…"
+          placeholder={
+            mode === "json" ? "Start typing JSON..." : "Start typing..."
+          }
         />
       </div>
 

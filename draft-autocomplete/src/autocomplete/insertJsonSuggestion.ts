@@ -97,8 +97,6 @@ function findStringRange(
     return null;
   }
 
-  // Заменяем только введённую часть до курсора.
-  // Перенос строки и следующий текст не трогаем.
   return { start, end: cursor };
 }
 
@@ -112,8 +110,6 @@ function findTokenRange(
   if (insideString) {
     let i = 0;
 
-    // Ищем открывающую кавычку текущей строки,
-    // просматривая текст только до курсора.
     while (i < cursor) {
       if (text[i] !== '"') {
         i++;
@@ -152,7 +148,10 @@ function findTokenRange(
     return null;
   }
 
-  // Начатое число или литерал.
+  if (kind === "property") {
+    return { start: cursor, end: cursor };
+  }
+
   if (query.length > 0) {
     const start = cursor - query.length;
     let end = cursor;
@@ -167,16 +166,14 @@ function findTokenRange(
     return { start, end };
   }
 
-  // Проверяем токен справа от пустой позиции ввода.
   let start = cursor;
 
   while (
     start < text.length &&
-    /[\x20\t\r\n]/.test(text[start])
+    /[ \t]/.test(text[start])
   ) {
     start++;
   }
-
   if (text[start] === '"') {
     return findStringRange(text, start, cursor, kind);
   }

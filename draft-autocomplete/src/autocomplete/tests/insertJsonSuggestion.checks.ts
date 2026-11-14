@@ -134,6 +134,7 @@ const cases: TestCase[] = [
     suggestion: value("GET"),
     expected: '{"method": "GET│", "timeout": 3000}',
   },
+
   {
     name: "Число вставляется без кавычек",
     input: '{"timeout": 10│00}',
@@ -145,6 +146,32 @@ const cases: TestCase[] = [
     input: '{"timeout": │}',
     suggestion: value("3000"),
     expected: '{"timeout": "3000│"}',
+  },
+  {
+    name: "A new property does not replace the following key",
+    input: `{
+  "method": "GET",
+│
+  "sku": "ABC"
+}`,
+    suggestion: property("description"),
+    expected: `{
+  "method": "GET",
+  "description": │
+  "sku": "ABC"
+}`,
+  },
+  {
+    name: "An empty value does not consume the next line",
+    input: `{
+  "description": │
+  "sku": "ABC"
+}`,
+    suggestion: value("Returns data."),
+    expected: `{
+  "description": "Returns data.│"
+  "sku": "ABC"
+}`,
   },
   {
     name: "Boolean вставляется без кавычек",
