@@ -9,6 +9,7 @@ import { insertJsonSuggestion } from "./insertJsonSuggestion";
 import { analyzeJsonDocument } from "./analyzeJsonDocument";
 import { getDocumentSuggestions } from "./getDocumentSuggestions";
 import { getConfiguredSuggestions } from "./suggestions";
+import { getIndentUnit } from "./jsonIndentation";
 
 import type { JsonSuggestion } from "./suggestions";
 import type { AutocompleteConfig } from "./configuration";
@@ -36,6 +37,14 @@ export function useAutocomplete(config: AutocompleteConfig) {
     );
 
     const content = editorState.getCurrentContent();
+
+    useEffect(() => {
+        if (mode === "json") {
+            const unit = getIndentUnit(content.getPlainText("\n"));
+            console.log("Indent unit:", JSON.stringify(unit));
+            console.log(content.getPlainText());
+        }
+    }, [content, mode]);
 
     const documentAnalysis = useMemo(
         () => mode === "json" ? analyzeJsonDocument(content.getPlainText("\n"))
