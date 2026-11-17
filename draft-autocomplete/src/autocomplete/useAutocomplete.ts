@@ -9,7 +9,7 @@ import { insertJsonSuggestion } from "./insertJsonSuggestion";
 import { analyzeJsonDocument } from "./analyzeJsonDocument";
 import { getDocumentSuggestions } from "./getDocumentSuggestions";
 import { getConfiguredSuggestions } from "./suggestions";
-import { getIndentUnit } from "./jsonIndentation";
+import { getJsonIndentation } from "./jsonIndentation";
 
 import type { JsonSuggestion } from "./suggestions";
 import type { AutocompleteConfig } from "./configuration";
@@ -28,6 +28,16 @@ export function useAutocomplete(config: AutocompleteConfig) {
         [editorState, mode],
     );
 
+    useEffect(() => {
+        if (mode !== "json" || !jsonInput) {
+            return;
+        }
+
+        const jsonIndentation = getJsonIndentation(jsonInput.text, jsonInput.cursor);
+
+        console.log("JSON indentation: ", JSON.stringify(jsonIndentation))
+    }, [jsonInput, mode])
+
     const jsonContext = useMemo(
         () =>
             jsonInput
@@ -37,14 +47,6 @@ export function useAutocomplete(config: AutocompleteConfig) {
     );
 
     const content = editorState.getCurrentContent();
-
-    useEffect(() => {
-        if (mode === "json") {
-            const unit = getIndentUnit(content.getPlainText("\n"));
-            console.log("Indent unit:", JSON.stringify(unit));
-            console.log(content.getPlainText());
-        }
-    }, [content, mode]);
 
     const documentAnalysis = useMemo(
         () => mode === "json" ? analyzeJsonDocument(content.getPlainText("\n"))
@@ -308,6 +310,19 @@ export function useAutocomplete(config: AutocompleteConfig) {
         }
 
         if (
+            event.key === "Enter" &&
+            !event.ctrlKey &&
+            !event.metaKey &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+        ) {
+            if (insertJsonNewline()) {
+                consumeEvent();
+                return;
+            }
+        }
+
+        if (
             event.key === "ArrowDown" ||
             event.key === "ArrowUp" ||
             event.key === "ArrowLeft" ||
@@ -348,6 +363,100 @@ export function useAutocomplete(config: AutocompleteConfig) {
         );
 
         handleEditorChange(focusedState);
+
+        return true;
+    }
+
+    function insertJsonNewline(): boolean {
+        if (mode !== "json") { return false }
+
+        const selection = editorState.getSelection();
+        if (!selection.isCollapsed()) {
+            return false;
+        }
+
+        const input = getJsonEditorInput(editorState);
+        if (!input) {
+            return false;
+        }
+
+        const jsonIndentation = getJsonIndentation(input.text, input.cursor);
+        if (!jsonIndentation) {
+            return false;
+        }
+
+        console.log("JSON indentation: ", JSON.stringify(jsonIndentation));
+
+        const content = editorState.getCurrentContent();
+
+        const currentBlock = content.getBlockForKey(selection.getStartKey());
+
+        const text = currentBlock.getText();
+        const rightText = text.slice(selection.getStartOffset());
+
+        const match = rightText.match(/^[ \t]*/)?.[0];
+        const leadingWhitespace = match ?? "";
+
+        const rightContent = rightText.slice(leadingWhitespace.length);
+
+        console.log("Right content:", JSON.stringify(rightContent));
+        console.log("Leading whitespace:", JSON.stringify(leadingWhitespace));
+
+        let nextContent = Modifier.splitBlock(content, selection);
+        const nextSelection = nextContent.getSelectionAfter();
+
+        if (leadingWhitespace.length > 0) {
+            const whitespaceSelection = nextSelection.merge({
+                anchorOffset: 0,
+                focusOffset: leadingWhitespace.length,
+            });
+
+            nextContent = Modifier.removeRange(
+                nextContent,
+                whitespaceSelection,
+                "forward",
+            );
+        }
+
+        nextContent = Modifier.insertText(
+            nextContent,
+            nextSelection,
+            jsonIndentation.indent,
+        );
+
+        const caretSelection = nextContent.getSelectionAfter();
+
+        const beforeClosingCharacter =
+            jsonIndentation.closingCharacter !== null &&
+            rightContent.startsWith(jsonIndentation.closingCharacter);
+
+        if (beforeClosingCharacter) {
+            nextContent = Modifier.splitBlock(
+                nextContent,
+                caretSelection,
+            );
+
+            const closingSelection = nextContent.getSelectionAfter();
+
+            nextContent = Modifier.insertText(
+                nextContent,
+                closingSelection,
+                jsonIndentation.closingIndent,
+            );
+        }
+
+        const nextEditorState = EditorState.push(
+            editorState,
+            nextContent,
+            "split-block",
+        )
+
+        const focusedEditorState = EditorState.forceSelection(
+            nextEditorState,
+            caretSelection,
+        )
+
+        handleEditorChange(focusedEditorState);
 
         return true;
     }

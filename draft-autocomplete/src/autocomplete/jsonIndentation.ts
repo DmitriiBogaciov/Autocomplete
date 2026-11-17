@@ -104,3 +104,39 @@ function findOpenContainers(
 
     return insideString ? null : stack;
 }
+
+export function getJsonIndentation(
+    text: string,
+    cursor: number,
+): JsonIndentation | null {
+    
+    if (!Number.isInteger(cursor) || cursor < 0 || cursor > text.length) {
+        return null;
+    }
+
+    const indentUnit = getIndentUnit(text);
+
+    const containers = findOpenContainers(
+        text,
+        cursor,
+        indentUnit,
+    )
+
+    if (!containers) { return null }
+
+    const lastContainer = containers[containers.length -1];
+
+    if (!lastContainer) {
+        return {
+            indent: "",
+            closingIndent: "",
+            closingCharacter: null,
+        }
+    }
+
+    return {
+        indent: lastContainer.indent + indentUnit,
+        closingIndent: lastContainer.indent,
+        closingCharacter: lastContainer.opener === "{" ? "}" : "]",
+    }
+}

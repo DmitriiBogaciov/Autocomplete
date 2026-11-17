@@ -8,6 +8,7 @@ import type { JsonSuggestion } from "./suggestions";
 import { getJsonEditorInput } from "./getJsonEditorInput";
 import { getJsonContext } from "./getJsonContext";
 import { analyzeJsonDocument } from "./analyzeJsonDocument";
+import { getJsonIndentation } from "./jsonIndentation";
 
 type TextRange = {
   start: number;
@@ -284,6 +285,13 @@ export function insertJsonSuggestion(
     return editorState;
   }
 
+  const lastPathPart = context.path[context.path.length - 1];
+
+  const isArrayValue =
+    context.kind === "value" &&
+    typeof lastPathPart === "number";
+
+
   let indentation = "";
 
   if (
@@ -311,6 +319,26 @@ export function insertJsonSuggestion(
     }
   }
 
+  if (
+    isArrayValue &&
+    !context.insideString &&
+    range.start === range.end
+  ) {
+    const lineStart =
+      input.text.lastIndexOf("\n", range.start - 1) + 1;
+
+    const linePrefix = input.text.slice(lineStart, range.start);
+
+    if (/^[ \t]*$/.test(linePrefix)) {
+      const layout = getJsonIndentation(input.text, input.cursor);
+
+      if (layout !== null) {
+        indentation = layout.indent;
+        range.start = lineStart;
+      }
+    }
+  }
+
   let replacement: string;
   let caret: number;
 
@@ -331,7 +359,7 @@ export function insertJsonSuggestion(
       caret = range.start + replacement.length;
     }
   } else {
-    replacement = JSON.stringify(suggestion.value);
+    replacement = indentation + JSON.stringify(suggestion.value);
 
     // Для строки ставим курсор перед закрывающей кавычкой.
     // Для числа, boolean и null — после значения.
