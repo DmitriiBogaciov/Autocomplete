@@ -9,6 +9,7 @@ import { getJsonEditorInput } from "./getJsonEditorInput";
 import { getJsonContext } from "./getJsonContext";
 import { analyzeJsonDocument } from "./analyzeJsonDocument";
 import { getJsonIndentation } from "./jsonIndentation";
+import type { ObjectScope } from "./analyzeJsonDocument";
 
 type TextRange = {
   start: number;
@@ -31,7 +32,6 @@ function findStringRange(
     }
 
     if (char === "\\") {
-      // Незавершённое экранирование перед концом строки.
       if (
         i + 1 >= text.length ||
         text[i + 1] === "\n" ||
@@ -47,7 +47,6 @@ function findStringRange(
     if (char === '"') {
       const end = i + 1;
 
-      // Проверяем корректность самого строкового токена.
       try {
         JSON.parse(text.slice(start, end));
       } catch {
@@ -78,9 +77,6 @@ function findStringRange(
     i++;
   }
 
-  // Закрывающей кавычки до конца строки нет.
-  // Восстанавливаем строку только если курсор находится в ней,
-  // а справа до конца строки остались лишь пробелы/табуляции.
   if (cursor <= start || cursor > i) {
     return null;
   }
@@ -92,7 +88,6 @@ function findStringRange(
   }
 
   try {
-    // Убеждаемся, что добавление кавычки завершает строку.
     JSON.parse(text.slice(start, cursor) + '"');
   } catch {
     return null;
@@ -199,7 +194,6 @@ function findTokenRange(
   return { start: cursor, end: cursor };
 }
 
-// Переводим позицию в общей строке обратно в координаты Draft.js.
 function locateOffset(content: ContentState, offset: number) {
   let remaining = offset;
 
@@ -226,31 +220,35 @@ function getPropertyIndent(
 ): string {
   const analysis = analyzeJsonDocument(text);
 
-  const currentObject = analysis.objects
-    .filter(
-      (object) =>
-        object.start < cursor &&
-        cursor <= object.end,
-    )
-    .sort((a, b) => b.start - a.start)[0];
+  let currentObject: ObjectScope | undefined;
+
+  for (const object of analysis.objects) {
+    if (object.start < cursor && cursor <= object.end) {
+      if (!currentObject || object.start > currentObject.start) {
+        currentObject = object;
+      }
+    }
+  }
 
   if (currentObject) {
-    // Берём оформление существующего свойства того же объекта.
     for (const property of currentObject.properties) {
       const lineStart =
         text.lastIndexOf("\n", property.start - 1) + 1;
 
       const prefix = text.slice(lineStart, property.start);
 
-      // Свойство должно начинаться с новой строки после отступа.
       if (/^[ \t]+$/.test(prefix)) {
         return prefix;
       }
     }
   }
 
-  // Если примера нет, используем табуляцию на каждый уровень.
-  // Это соответствует нашей функции insertTab().
+  const layout = getJsonIndentation(text, cursor);
+
+  if (layout !== null) {
+    return layout.indent;
+  }
+
   return "\t".repeat(objectDepth);
 }
 
@@ -295,46 +293,33 @@ export function insertJsonSuggestion(
   let indentation = "";
 
   if (
-    suggestion.kind === "property" &&
+    (suggestion.kind === "property" || isArrayValue) &&
     !context.insideString &&
     range.start === range.end
   ) {
-    const lineStart =
-      input.text.lastIndexOf("\n", range.start - 1) + 1;
-
-    const linePrefix = input.text.slice(lineStart, range.start);
-
-    // Автоотступ нужен только при вставке нового свойства
-    // в начале строки, где пока есть лишь пробелы или табуляции.
-    if (/^[ \t]*$/.test(linePrefix)) {
-      indentation = getPropertyIndent(
-        input.text,
-        input.cursor,
-        context.path.length + 1,
-      );
-
-      // Заменяем уже набранный отступ вместе с пустой позицией.
-      // Поэтому отступы не будут складываться.
-      range.start = lineStart;
-    }
-  }
-
-  if (
-    isArrayValue &&
-    !context.insideString &&
-    range.start === range.end
-  ) {
-    const lineStart =
-      input.text.lastIndexOf("\n", range.start - 1) + 1;
+    const lineStart = input.text.lastIndexOf("\n", range.start - 1) + 1;
 
     const linePrefix = input.text.slice(lineStart, range.start);
 
     if (/^[ \t]*$/.test(linePrefix)) {
-      const layout = getJsonIndentation(input.text, input.cursor);
+      if (suggestion.kind === "property") {
+        indentation = getPropertyIndent(
+          input.text,
+          input.cursor,
+          context.path.length + 1,
+        );
 
-      if (layout !== null) {
-        indentation = layout.indent;
         range.start = lineStart;
+      } else {
+        const layout = getJsonIndentation(
+          input.text,
+          input.cursor,
+        );
+
+        if (layout !== null) {
+          indentation = layout.indent;
+          range.start = lineStart;
+        }
       }
     }
   }
@@ -349,7 +334,6 @@ export function insertJsonSuggestion(
     const existingColon = suffix.match(/^[\x20\t\r\n]*:[\x20\t\r\n]*/);
 
     if (existingColon) {
-      // Двоеточие уже есть — сохраняем его и переходим за него.
       caret =
         range.start +
         replacement.length +
@@ -361,8 +345,6 @@ export function insertJsonSuggestion(
   } else {
     replacement = indentation + JSON.stringify(suggestion.value);
 
-    // Для строки ставим курсор перед закрывающей кавычкой.
-    // Для числа, boolean и null — после значения.
     caret =
       range.start +
       replacement.length -

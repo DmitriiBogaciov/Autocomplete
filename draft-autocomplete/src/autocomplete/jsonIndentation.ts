@@ -92,7 +92,7 @@ function findOpenContainers(
             );
         } else if (character === "}" || character === "]") {
             const container = stack[stack.length - 1];
-            const expectedOpener = character === "}" ? "]" : "[";
+            const expectedOpener = character === "}" ? "{" : "[";
 
             if (!container || container.opener !== expectedOpener) {
                 return null;

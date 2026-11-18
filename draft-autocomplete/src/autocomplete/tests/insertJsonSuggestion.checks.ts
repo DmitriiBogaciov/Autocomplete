@@ -253,7 +253,7 @@ const cases: TestCase[] = [
     name: "Отступ вложенного объекта без соседних свойств",
     input: '{\n  "author": {\n│\n  }\n}',
     suggestion: property("name"),
-    expected: '{\n  "author": {\n\t\t"name": │\n  }\n}',
+    expected: '{\n  "author": {\n    "name": │\n  }\n}',
   },
 ];
 
