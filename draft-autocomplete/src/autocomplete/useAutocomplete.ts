@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import type { KeyboardEvent } from "react";
 import { EditorState, Modifier } from "draft-js";
-
+import type { DraftHandleValue } from "draft-js";
 import { useSuggestionPosition } from "./useSuggestionPosition";
 import { getJsonEditorInput } from "./getJsonEditorInput";
 import { getJsonContext } from "./getJsonContext";
@@ -27,16 +27,6 @@ export function useAutocomplete(config: AutocompleteConfig) {
         () => mode === "json" ? getJsonEditorInput(editorState) : null,
         [editorState, mode],
     );
-
-    useEffect(() => {
-        if (mode !== "json" || !jsonInput) {
-            return;
-        }
-
-        const jsonIndentation = getJsonIndentation(jsonInput.text, jsonInput.cursor);
-
-        console.log("JSON indentation: ", JSON.stringify(jsonIndentation))
-    }, [jsonInput, mode])
 
     const jsonContext = useMemo(
         () =>
@@ -92,6 +82,72 @@ export function useAutocomplete(config: AutocompleteConfig) {
 
         return restOfLine.trimStart().startsWith('"');
     }, [jsonInput, jsonContext]);
+
+    function handleBeforeInput(
+        characters: string,
+    ): DraftHandleValue {
+        return insertClosingCharacter(characters)
+            ? "handled"
+            : "not-handled";
+    }
+
+    function insertClosingCharacter(character: string): boolean {
+        if (mode != "json") {
+            return false
+        }
+
+        if (character != "}" && character != "]") {
+            return false
+        }
+
+        const input = getJsonEditorInput(editorState)
+        if (input === null) {
+            return false
+        }
+
+        const layout = getJsonIndentation(input.text, input.cursor)
+        if (layout === null || layout.closingCharacter !== character) {
+            return false
+        }
+
+        const lineStart = input.text.lastIndexOf("\n", input.cursor - 1) + 1;
+
+        const linePrefix = input.text.slice(lineStart, input.cursor);
+        if (!/^[ \t]*$/.test(linePrefix)) {
+            return false;
+        }
+
+        const selection = editorState.getSelection();
+
+        const replacementSelection = selection.merge({
+            anchorOffset: 0,
+            focusOffset: input.blockOffset,
+        });
+
+        const replacement = layout.closingIndent + character;
+
+        const nextContent = Modifier.replaceText(
+            editorState.getCurrentContent(),
+            replacementSelection,
+            replacement,
+            editorState.getCurrentInlineStyle(),
+        );
+
+        const nextState = EditorState.push(
+            editorState,
+            nextContent,
+            "insert-characters",
+        );
+
+        const focusedState = EditorState.forceSelection(
+            nextState,
+            nextContent.getSelectionAfter(),
+        );
+
+        handleEditorChange(focusedState);
+
+        return true;
+    }
 
     const canShowSuggestions = useMemo(() => {
         if (!jsonInput || !jsonContext || jsonContext.kind === "none") {
@@ -182,8 +238,14 @@ export function useAutocomplete(config: AutocompleteConfig) {
 
     function handleEditorChange(nextState: EditorState) {
         const contentChanged = nextState.getCurrentContent() !== editorState.getCurrentContent();
+        const previousSelection = editorState.getSelection();
+        const nextSelection = nextState.getSelection();
 
-        const selectionChanged = !nextState.getSelection().equals(editorState.getSelection());
+        const selectionChanged =
+            previousSelection.getAnchorKey() !== nextSelection.getAnchorKey() ||
+            previousSelection.getAnchorOffset() !== nextSelection.getAnchorOffset() ||
+            previousSelection.getFocusKey() !== nextSelection.getFocusKey() ||
+            previousSelection.getFocusOffset() !== nextSelection.getFocusOffset();
 
         if (contentChanged || selectionChanged) {
             setActiveIndex(-1);
@@ -236,6 +298,16 @@ export function useAutocomplete(config: AutocompleteConfig) {
             return;
         }
 
+        if (
+            event.nativeEvent.isComposing ||
+            editorState.isInCompositionMode() ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey
+        ) {
+            return;
+        }
+
         const isMenuVisible =
             !isDismissed &&
             suggestions.length > 0 &&
@@ -276,11 +348,10 @@ export function useAutocomplete(config: AutocompleteConfig) {
                 isMenuVisible &&
                 (event.key === "Enter" || event.key === "Tab")
             ) {
-                consumeEvent();
-
                 const suggestion = suggestions[activeIndex];
 
                 if (suggestion !== undefined) {
+                    consumeEvent();
                     handleSuggestionSelect(suggestion);
                 }
             }
@@ -309,13 +380,7 @@ export function useAutocomplete(config: AutocompleteConfig) {
             return;
         }
 
-        if (
-            event.key === "Enter" &&
-            !event.ctrlKey &&
-            !event.metaKey &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-        ) {
+        if (event.key === "Enter") {
             if (insertJsonNewline()) {
                 consumeEvent();
                 return;
@@ -385,8 +450,6 @@ export function useAutocomplete(config: AutocompleteConfig) {
             return false;
         }
 
-        console.log("JSON indentation: ", JSON.stringify(jsonIndentation));
-
         const content = editorState.getCurrentContent();
 
         const currentBlock = content.getBlockForKey(selection.getStartKey());
@@ -398,9 +461,6 @@ export function useAutocomplete(config: AutocompleteConfig) {
         const leadingWhitespace = match ?? "";
 
         const rightContent = rightText.slice(leadingWhitespace.length);
-
-        console.log("Right content:", JSON.stringify(rightContent));
-        console.log("Leading whitespace:", JSON.stringify(leadingWhitespace));
 
         let nextContent = Modifier.splitBlock(content, selection);
         const nextSelection = nextContent.getSelectionAfter();
@@ -469,11 +529,10 @@ export function useAutocomplete(config: AutocompleteConfig) {
         suggestions,
         suggestionPosition,
         activeIndex,
-        jsonInput,
-        jsonContext,
         handleEditorChange,
         handleKeyDown,
         handleSuggestionSelect,
         handleModeChange,
+        handleBeforeInput,
     };
 }

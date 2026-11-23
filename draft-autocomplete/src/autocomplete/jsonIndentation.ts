@@ -33,12 +33,11 @@ function getLineIndent(text: string, lineStart: number): string {
 
 function createContainer(
     text: string,
-    position: number,
+    lineStart: number,
     opener: Container["opener"],
     parent: Container | undefined,
     indentUnit: string,
 ): Container {
-    const lineStart = text.lastIndexOf("\n", position - 1) + 1;
 
     const indent =
         parent && parent.lineStart === lineStart
@@ -60,6 +59,7 @@ function findOpenContainers(
     const stack: Container[] = [];
     let insideString = false;
     let escaped = false;
+    let lineStart = 0;
 
     for (let position = 0; position < cursor; position++) {
         const character = text[position];
@@ -80,6 +80,11 @@ function findOpenContainers(
             continue;
         }
 
+        if (character === "\n") {
+            lineStart = position + 1;
+            continue;
+        }
+
         if (character === '"') {
             insideString = true;
             continue;
@@ -88,7 +93,7 @@ function findOpenContainers(
         if (character === "{" || character === "[") {
             const parent = stack[stack.length - 1];
 
-            stack.push(createContainer(text, position, character, parent, indentUnit),
+            stack.push(createContainer(text, lineStart, character, parent, indentUnit),
             );
         } else if (character === "}" || character === "]") {
             const container = stack[stack.length - 1];

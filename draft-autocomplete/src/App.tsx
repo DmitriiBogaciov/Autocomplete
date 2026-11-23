@@ -17,12 +17,11 @@ function App() {
     suggestions,
     suggestionPosition,
     activeIndex,
-    jsonInput,
-    jsonContext,
     handleEditorChange,
     handleKeyDown,
     handleSuggestionSelect,
     handleModeChange,
+    handleBeforeInput,
   } = useAutocomplete(autocompleteConfig);
 
   return (
@@ -99,6 +98,7 @@ function App() {
           placeholder={
             mode === "json" ? "Start typing JSON..." : "Start typing..."
           }
+          handleBeforeInput={handleBeforeInput}
         />
       </div>
 
@@ -164,40 +164,6 @@ function App() {
           </ul>,
           document.body,
         )}
-
-      {jsonContext && (
-        <pre
-          style={{
-            padding: 12,
-            background: "#eee",
-            color: "#111",
-            textAlign: "left",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {JSON.stringify(jsonContext, null, 2)}
-        </pre>
-      )}
-
-      {jsonInput && (
-        <div style={{ marginTop: 16, textAlign: "left" }}>
-          <div>Document cursor position: {jsonInput.cursor}</div>
-
-          <pre
-            style={{
-              padding: 12,
-              background: "#eee",
-              color: "#111",
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-            }}
-          >
-            {jsonInput.text.slice(0, jsonInput.cursor)}
-            {"│"}
-            {jsonInput.text.slice(jsonInput.cursor)}
-          </pre>
-        </div>
-      )}
     </div>
   );
 }
